@@ -30,7 +30,7 @@ import json
 import importlib.util
 import inspect
 from appdirs import AppDirs
-from datetime import date, datetime
+from datetime import datetime
 from pygments import highlight
 from pygments.lexers import get_lexer_by_name
 from pygments.formatters import Terminal256Formatter
@@ -267,7 +267,7 @@ def get_available_tools():
         'type': 'function',
         'function': {
             'name': 'query_vector_database',
-            'description': f'Performs a semantic search using a knowledge base collection.',
+            'description': 'Performs a semantic search using a knowledge base collection.',
             'parameters': {
                 "type": "object",
                 "properties": {
@@ -1312,7 +1312,7 @@ def is_html(file_path):
         with open(file_path, 'r') as f:
             first_line = next((line.strip() for line in f if line.strip()), None)
             return first_line and (first_line.lower().startswith('<!doctype html>') or first_line.lower().startswith('<html'))
-    except Exception as e:
+    except Exception:
         return False
     
 def is_docx(file_path):
@@ -1486,7 +1486,7 @@ class MemoryManager:
         self.long_term_memory_manager.process_conversation(user_id, conversation)
 
         if self.verbose:
-            on_print(f"Long-term memory updated.", Fore.WHITE + Style.DIM)
+            on_print("Long-term memory updated.", Fore.WHITE + Style.DIM)
 
         return True
 
@@ -1683,7 +1683,7 @@ class LongTermMemoryManager:
         """
         Returns the system prompt for extracting key-value information from the conversation.
         """
-        return f"""
+        return """
         You are analyzing a conversation between a user and an assistant. Your task is to extract key pieces of information 
         about the user that could be useful for long-term memory.
         
@@ -2062,7 +2062,7 @@ class DocumentIndexer:
                                 ollama_options["num_ctx"] = num_ctx
                                 
                             if self.verbose:
-                                embedding_info = f"using extracted text" if extract_start and extract_end else "using full content"
+                                embedding_info = "using extracted text" if extract_start and extract_end else "using full content"
                                 summary_info = " with summary" if document_summary else ""
                                 on_print(f"Generating embedding for chunk {chunk_id} using {self.model} ({embedding_info}{summary_info})", Fore.WHITE + Style.DIM)
                             # Prepare a potentially truncated string for the embedding call so we don't exceed
@@ -2112,7 +2112,7 @@ class DocumentIndexer:
                             ollama_options["num_ctx"] = num_ctx
                             
                         if self.verbose:
-                            embedding_info = f"using extracted text" if extract_start and extract_end else "using full content"
+                            embedding_info = "using extracted text" if extract_start and extract_end else "using full content"
                             on_print(f"Generating embedding for document {document_id} using {self.model} ({embedding_info})", Fore.WHITE + Style.DIM)
 
                         # Use extracted content for embedding computation. Truncate input to embedding API if needed
@@ -2391,7 +2391,7 @@ def catchup_full_documents_from_chromadb(chroma_client, collection_name, full_do
             progress_bar.close()
         
         # Print summary
-        on_print(f"\nCatchup completed:", Fore.GREEN)
+        on_print("\nCatchup completed:", Fore.GREEN)
         on_print(f"  Indexed: {indexed_count} documents", Fore.GREEN)
         on_print(f"  Skipped (already indexed): {skipped_count} documents", Fore.YELLOW)
         on_print(f"  Errors: {error_count} documents", Fore.RED if error_count > 0 else Fore.WHITE)
@@ -3880,7 +3880,7 @@ def handle_tool_response(bot_response, model_support_tools, conversation, model,
                 # if parameters is a string, convert it to a dictionary
                 if isinstance(parameters, str):
                     if verbose_mode:
-                        on_print(f"[DEBUG] Converting string parameters to dict", Fore.CYAN + Style.DIM)
+                        on_print("[DEBUG] Converting string parameters to dict", Fore.CYAN + Style.DIM)
                     try:
                         parameters = extract_json(parameters)
                         if verbose_mode:
@@ -3894,7 +3894,7 @@ def handle_tool_response(bot_response, model_support_tools, conversation, model,
                 # If it's a list, try to convert it based on the tool's parameter definition
                 if isinstance(parameters, list):
                     if verbose_mode:
-                        on_print(f"[DEBUG] Parameters is a list, attempting to convert to dict", Fore.CYAN + Style.DIM)
+                        on_print("[DEBUG] Parameters is a list, attempting to convert to dict", Fore.CYAN + Style.DIM)
                     # Try to map list items to parameter names from the tool definition
                     if 'parameters' in tool.get('function', {}) and 'properties' in tool['function']['parameters']:
                         param_names = list(tool['function']['parameters']['properties'].keys())
@@ -3910,7 +3910,7 @@ def handle_tool_response(bot_response, model_support_tools, conversation, model,
                             parameters = {}
                     else:
                         if verbose_mode:
-                            on_print(f"[DEBUG] No parameter definition found in tool, using empty dict", Fore.CYAN + Style.DIM)
+                            on_print("[DEBUG] No parameter definition found in tool, using empty dict", Fore.CYAN + Style.DIM)
                         parameters = {}
                 elif not isinstance(parameters, dict):
                     # If it's neither string, list, nor dict, convert to empty dict
@@ -3995,7 +3995,7 @@ def handle_tool_response(bot_response, model_support_tools, conversation, model,
         # Pass the tools back so the model can make follow-up tool calls if needed
         bot_response = ask_ollama_with_conversation(conversation, model, temperature, prompt_template, tools=tools, no_bot_prompt=True, stream_active=stream_active, num_ctx=num_ctx)
     else:
-        on_print(f"Tools not found", Fore.RED)
+        on_print("Tools not found", Fore.RED)
         return None
     
     return bot_response
@@ -4265,7 +4265,7 @@ def try_merge_concatenated_json(json_str, verbose=False):
     
     if not json_objects:
         if verbose:
-            on_print(f"[DEBUG] No individual JSON objects found in concatenated string", Fore.CYAN + Style.DIM)
+            on_print("[DEBUG] No individual JSON objects found in concatenated string", Fore.CYAN + Style.DIM)
         return None
     
     # If we have multiple objects, merge them by taking the last (most recent) one
@@ -4370,7 +4370,7 @@ def extract_json(garbage_str):
         
         # If parsing fails, try to handle concatenated JSON objects
         if verbose_mode:
-            on_print(f"[DEBUG] Initial JSON parsing failed, attempting to handle concatenated JSON objects", Fore.CYAN + Style.DIM)
+            on_print("[DEBUG] Initial JSON parsing failed, attempting to handle concatenated JSON objects", Fore.CYAN + Style.DIM)
         
         # Try to split and merge multiple JSON objects
         merged_result = try_merge_concatenated_json(json_str, verbose=verbose_mode)
@@ -4432,8 +4432,6 @@ def select_ollama_model_if_available(model_name):
 
     for model in models:
         if model["model"] == model_name:
-            selected_model = model
-
             if verbose_mode:
                 on_print(f"Selected model: {model_name}", Fore.WHITE + Style.DIM)
             return model_name
@@ -5771,7 +5769,7 @@ def run():
                     if verbose_mode:
                         on_print(f"Context window changed to {num_ctx} tokens.", Fore.WHITE + Style.DIM)
             else:
-                on_print(f"Please specify context window size with /context <number>.", Fore.RED)
+                on_print("Please specify context window size with /context <number>.", Fore.RED)
             continue
 
         if "/system" in user_input:
