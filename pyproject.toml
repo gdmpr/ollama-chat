@@ -1,0 +1,106 @@
+########################################
+# Build system
+########################################
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+########################################
+# Project metadata
+########################################
+[project]
+name = "ollama_chat"
+version = "0.1.0"
+description = "A customizable Python CLI tool for interacting with local Language Models, ensuring data privacy while providing conversation memory and extensibility through plugins and efficient Retrieval-Augmented Generation capabilities with ChromaDB integration. Also compatible with OpenAI API. "
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+authors = [
+  { name = "jeromeboivin" },
+  { name = "gdmpr" }
+]]
+
+########################################
+# Runtime dependencies
+########################################
+dependencies = [
+  "ollama",
+  "colorama",
+  "chromadb",
+  "pygments",
+  "ddgs",
+  "beautifulsoup4",
+  "markdownify",
+  "requests",
+  "PyPDF2",
+  "chardet",
+  "langchain-text-splitters",
+  "openai",
+  "tqdm",
+  "rank-bm25",
+  "appdirs",
+  "lxml",
+  "python-pptx",
+  "python-docx",
+  "markdown",
+
+  # OS-specific
+  "pyperclip; platform_system != 'Windows'",
+  "readline; platform_system != 'Windows'",
+  "pywin32; platform_system == 'Windows'"
+]
+
+########################################
+# CLI entry point
+########################################
+[project.scripts]
+project-name = "ollama_chat.main:main"
+
+########################################
+# Optional dependencies (development)
+########################################
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.0",
+  "black>=23.0",
+  "ruff>=0.1",
+  "mypy>=1.5"
+]
+
+########################################
+# setuptools configuration
+########################################
+[tool.setuptools]
+packages = ["ollama_chat"]
+
+########################################
+# Black - formatter
+########################################
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+
+########################################
+# Ruff - linter
+########################################
+[tool.ruff]
+line-length = 88
+select = ["E", "F", "W", "I"]
+exclude = ["tests"]
+
+########################################
+# Pytest
+########################################
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+addopts = "-ra"
+
+########################################
+# Mypy
+########################################
+[tool.mypy]
+python_version = "3.10"
+strict = false
+ignore_missing_imports = true
