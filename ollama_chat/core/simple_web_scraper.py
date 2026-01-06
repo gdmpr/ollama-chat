@@ -7,8 +7,8 @@ from colorama import Fore
 import requests
 from bs4 import BeautifulSoup
 
-from ollama_chat.core import on_print
-from ollama_chat.core import extract_text_from_html
+from ollama_chat.core import plugins
+from ollama_chat.core.extract_text import extract_text_from_html
 
 class SimpleWebScraper:
     def __init__(self, base_url, output_dir="downloaded_site", file_types=None, restrict_to_base=True, convert_to_markdown=False, verbose=False):
@@ -28,7 +28,7 @@ class SimpleWebScraper:
 
         # Prevent deep recursion
         if depth > max_depth and self.verbose:
-            on_print(f"Max depth reached for {url}")
+            plugins.on_print(f"Max depth reached for {url}")
             return
 
         # Normalize the URL to avoid duplicates
@@ -40,7 +40,7 @@ class SimpleWebScraper:
         self.visited.add(url)
 
         if self.verbose:
-            on_print(f"Scraping: {url}")
+            plugins.on_print(f"Scraping: {url}")
         response = self._fetch(url)
         if not response:
             return
@@ -62,11 +62,11 @@ class SimpleWebScraper:
             credentials = f"{self.username}:{self.password}"
             encoded_credentials = base64.b64encode(credentials.encode('utf-8')).decode('utf-8')
             headers['Authorization'] = f"Basic {encoded_credentials}"
-        
+
         try:
             response = requests.get(url, headers=headers, timeout=10)
             if response.status_code == 401:
-                on_print(f"Unauthorized access to {url}. Please enter your credentials.", Fore.RED)
+                plugins.on_print(f"Unauthorized access to {url}. Please enter your credentials.", Fore.RED)
                 self.username = input("Username: ")
                 self.password = getpass.getpass("Password: ")
                 credentials = f"{self.username}:{self.password}"
@@ -76,7 +76,7 @@ class SimpleWebScraper:
                 response.raise_for_status()
             return response
         except requests.RequestException as e:
-            on_print(f"Failed to fetch {url}: {e}", Fore.RED)
+            plugins.on_print(f"Failed to fetch {url}: {e}", Fore.RED)
             return None
 
     def _save_html(self, url, html):

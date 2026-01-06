@@ -1,0 +1,27 @@
+Possible prompt commands:
+    /cot: Help the assistant answer the user's question by forcing a Chain of Thought (COT) approach.
+    /file <path of a file to load>: Read the file and append the content to user input.
+    /search <number of results>: Query the vector database and append the answer to user input (RAG system).
+    /web: Perform a web search using DuckDuckGo.
+    /model: Change the Ollama model.
+    /tools: Prompts the user to select or deselect tools from the available tools list.
+    /chatbot: Change the chatbot personality.
+    /collection: Change the vector database collection.
+    /rmcollection <collection name>: Delete the vector database collection.
+    /context <model context size>: Change the model's context window size. Default value: 2. Size must be a numeric value between 2 and 125.
+    /index <folder path>: Index text files in the folder to the vector database.
+        (Note: For non-interactive indexing, use CLI args: --index-documents, --chunk-documents, --extract-start, --extract-end, etc.)
+    /cb: Replace /cb with the clipboard content.
+    /load <filename>: Load a conversation from a file.
+    /save <filename>: Save the conversation to a file. If no filename is provided, save with a timestamp into current directory.
+    /verbose: Toggle verbose mode on or off.
+    /memory: Toggle memory assistant on or off.
+    /memorize or /remember: Store the current conversation in memory.
+    reset, clear, restart: Reset the conversation.
+    quit, exit, bye: Exit the chatbot.
+    For multiline input, you can wrap text with triple double quotes.
+
+    CLI-only RAG operations (use with --interactive=False):
+    --query "<your question>": Query the vector database from command line
+    --query-n-results <number>: Number of results to return from query
+    --index-documents <folder>: Index documents from folder (with options: --chunk-documents, --skip-existing, etc.)

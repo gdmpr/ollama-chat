@@ -100,6 +100,17 @@ Ollama-Chat comes with a built-in feature that allows you to search the web usin
 
 4. Start customizing by writing your own plugins!
 
+## Managing memory
+Ollama-Chat hat two kinds of memory that can be enabled: conversation memory and long-term memory:
+
+### Conversation memory
+Stores conversations summaries in the vector database.
+If enabled, at the end of each conversation a summary is generated and saved in the vectior database. In subsequent sessions, for each new user message the conversations memory is searched for previous conversations about the same argument and the relevant chunks are "recalled" and loaded into the conversation.
+
+### Long-term memory
+Stores relevant user information in a JSON file.
+If enabled, when ending a conversation the system analyzes it with a special prompt in search for user personal, and relevant information to store in long-term memory. If found, this information is saved in a JSON file and loaded at the beginning of every subsequent conversation, so the model can remember relevant user information and learn to know him.
+
 ## Quick Start: RAG Operations
 
 ### Index Documents from Command Line
