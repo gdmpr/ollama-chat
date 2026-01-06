@@ -1,12 +1,32 @@
-from appdirs import AppDirs
+"""
+Code related to the keeping of long-term memory that tha application keeps between executions.
+"""
+
 import os
 import json
-from ollama_chat.core import extract_json
-from ollama_chat.core import ask_ollama
-from ollama_chat.core import on_print
+
+from appdirs import AppDirs
+from colorama import Fore, Style
+
+from ollama_chat.core import utils
+from ollama_chat import APP_NAME, APP_AUTHOR, APP_VERSION
+from ollama_chat.core.ollama import ask_ollama
+from ollama_chat.core.context import Context
+
 
 class LongTermMemoryManager:
-    def __init__(self, selected_model, verbose=False, num_ctx=None, memory_file="long_term_memory.json"):
+    """
+    The information to store in long-term memory is extracter with a prompt analizing the
+    conversation just before the closing of the app. If any useful informatio is found, that is is
+    saved in a Chroma database located in the app persistent directory.
+    """
+    def __init__(
+        self,
+        selected_model,
+        verbose=False,
+        num_ctx=None,
+        memory_file="long_term_memory.json"
+    ):
         # Initialize app directories using appdirs
         dirs = AppDirs(APP_NAME, APP_AUTHOR, version=APP_VERSION)
 
@@ -49,7 +69,7 @@ class LongTermMemoryManager:
             # Save the updated memory back to the JSON file
             self._save_memory()
 
-    def process_conversation(self, user_id, conversation):
+    def process_conversation(self, user_id, conversation, *, ctx:Context):
         """
         Processes a conversation and uses GPT to:
         - Extract relevant key-value pairs for long-term memory.
@@ -66,15 +86,36 @@ class LongTermMemoryManager:
 
         # Step 1: Extract key-value information
         system_prompt_extract = self._get_extraction_prompt()
-        extracted_info = extract_json(ask_ollama(system_prompt_extract, conversation_str, self.selected_model, temperature=0.1, no_bot_prompt=True, stream_active=False, num_ctx=self.num_ctx))
+        extracted_info = utils.extract_json(ask_ollama(
+            system_prompt_extract,
+            conversation_str,
+            self.selected_model,
+            temperature=0.1,
+            no_bot_prompt=True,
+            stream_active=False,
+            num_ctx=self.num_ctx,
+            ctx=ctx
+        ),  ctx=ctx)
 
         if self.verbose:
-            on_print(f"Extracted information: {extracted_info}", Fore.WHITE + Style.DIM)
+            utils.on_print(f"Extracted information: {extracted_info}", Fore.WHITE + Style.DIM)
 
         # Step 2: Check for contradictions with existing memory
         existing_memory = self.memory["users"].get(user_id, {})
         system_prompt_conflict = self._get_conflict_check_prompt(existing_memory, conversation_str)
-        conflicting_info = extract_json(ask_ollama(system_prompt_conflict, conversation_str, self.selected_model, temperature=0.1, no_bot_prompt=True, stream_active=False, num_ctx=self.num_ctx))
+        conflicting_info = utils.extract_json(
+            ask_ollama(
+                system_prompt_conflict,
+                conversation_str,
+                self.selected_model,
+                temperature=0.1,
+                no_bot_prompt=True,
+                stream_active=False,
+                num_ctx=self.num_ctx,
+                ctx=ctx
+            ),
+            ctx=ctx
+        )
 
         # Remove conflicting info from memory if flagged by GPT
         if conflicting_info:
@@ -88,9 +129,9 @@ class LongTermMemoryManager:
         Returns the system prompt for extracting key-value information from the conversation.
         """
         return """
-        You are analyzing a conversation between a user and an assistant. Your task is to extract key pieces of information 
+        You are analyzing a conversation between a user and an assistant. Your task is to extract key pieces of information
         about the user that could be useful for long-term memory.
-        
+
         The information should be structured as key-value pairs, where the **keys** represent different aspects of the user's life, such as:
         - Relationships (e.g., 'sister', 'friends', 'spouse')
         - Preferences (e.g., 'favorite color', 'preferred music', 'favorite food')
@@ -98,7 +139,7 @@ class LongTermMemoryManager:
         - Jobs (e.g., 'job', 'role', 'employer')
         - Interests (e.g., 'interests', 'books', 'movies')
 
-        Focus on extracting personal, long-term information that is explicitly or implicitly mentioned in the conversation. 
+        Focus on extracting personal, long-term information that is explicitly or implicitly mentioned in the conversation.
         Ignore temporary or context-specific information (e.g., emotions, recent events).
 
         The format should be a JSON object with key-value pairs. For example:
@@ -116,7 +157,7 @@ class LongTermMemoryManager:
         Returns the system prompt for checking contradictions between existing memory and the new conversation.
         """
         return f"""
-        You are analyzing a conversation between a user and an assistant to determine if any part of the user's existing 
+        You are analyzing a conversation between a user and an assistant to determine if any part of the user's existing
         long-term memory is incorrect or outdated.
 
         The user has the following existing memory, structured as key-value pairs:

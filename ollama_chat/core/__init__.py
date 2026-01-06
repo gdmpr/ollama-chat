@@ -2,7 +2,7 @@ from .code import run
 
 from .memory_manager import MemoryManager
 
-from .long_termmemory_manager import LongTermMemoryManager
+from .long_term_memory_manager import LongTermMemoryManager
 
 from .utils import extract_json
 from .utils import try_parse_json
@@ -31,6 +31,9 @@ from .simple_web_scraper import SimpleWebScraper
 from .extract_text import extract_text_from_pdf
 from .extract_text import extract_text_from_html
 
-from .plugin_manager import plugin_manager
+from .plugins import plugin_manager
+#from .plugin_manager import discover_plugins
 
-__all__ = ["run", "MemoryManager", "LongTermMemoryManager", "extract_json", "try_parse_json", "on_print", "try_merge_concatenated_json", "ask_ollama", "on_prompt", "print_spinning_wheel",  "Agent",  "on_stdout_write", "on_stdout_flush", "on_user_input", "DocumentIndexer", "extract_text_from_html", "MarkdownSplitter", "FullDocumentStore", "extract_text_from_pdf", "SimpleWebCrawler", "SimpleWebScraper", "render_tools", "plugin_manager"]
+from .toolman import tool_manager
+
+__all__ = ["run", "MemoryManager", "LongTermMemoryManager", "extract_json", "try_parse_json", "on_print", "try_merge_concatenated_json", "ask_ollama", "on_prompt", "print_spinning_wheel",  "Agent",  "on_stdout_write", "on_stdout_flush", "on_user_input", "DocumentIndexer", "extract_text_from_html", "MarkdownSplitter", "FullDocumentStore", "extract_text_from_pdf", "SimpleWebCrawler", "SimpleWebScraper", "render_tools", "plugin_manager" "tool_manager"]

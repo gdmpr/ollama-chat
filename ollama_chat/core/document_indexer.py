@@ -6,15 +6,27 @@ from colorama import Fore, Style
 import ollama
 
 from tqdm import tqdm
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from ollama_chat.core import on_print
-from ollama_chat.core import ask_ollama
-from ollama_chat.core import on_user_input
-from ollama_chat.core import MarkdownSplitter
-from ollama_chat.core import extract_text_from_html
+from ollama_chat.core.utils import on_print
+from ollama_chat.core.ollama import ask_ollama
+from ollama_chat.core.utils import on_user_input
+from ollama_chat.core.markdown_splitter import MarkdownSplitter
+from ollama_chat.core.extract_text import extract_text_from_html
+from ollama_chat.core.context import Context
 
 class DocumentIndexer:
-    def __init__(self, root_folder, collection_name, chroma_client, embeddings_model, verbose=False, summary_model=None, full_doc_store=None):
+    def __init__(
+        self,
+        root_folder,
+        collection_name,
+        chroma_client,
+        embeddings_model,
+        verbose=False,
+        summary_model=None,
+        full_doc_store=None
+    ):
+
         self.root_folder = root_folder
         self.collection_name = collection_name
         self.client = chroma_client
@@ -73,7 +85,8 @@ class DocumentIndexer:
         Ignore empty lines at the beginning of the file and check only the first non-empty line.
         """
         text_files = []
-        for root, dirs, files in os.walk(self.root_folder):
+        # for root, dirs, files in os.walk(self.root_folder):
+        for root, files in os.walk(self.root_folder):
             for file in files:
                 # Check for files with extension
                 if file.endswith(".txt") or file.endswith(".md") or file.endswith(".tex"):
@@ -98,7 +111,7 @@ class DocumentIndexer:
     def extract_text_between_strings(self, content, start_string, end_string):
         """
         Extract text between two specified strings.
-        
+
         :param content: The full text content.
         :param start_string: The string marking the start of extraction.
         :param end_string: The string marking the end of extraction.
@@ -106,33 +119,46 @@ class DocumentIndexer:
         """
         if not start_string or not end_string:
             return content
-            
+
         start_index = content.find(start_string)
         if start_index == -1:
             if self.verbose:
                 on_print(f"Start string '{start_string}' not found, using full content", Fore.YELLOW)
             return content
-            
+
         # Move past the start string
         start_index += len(start_string)
-        
+
         end_index = content.find(end_string, start_index)
         if end_index == -1:
             if self.verbose:
                 on_print(f"End string '{end_string}' not found after start string, using content from start string to end", Fore.YELLOW)
             return content[start_index:]
-            
+
         extracted_text = content[start_index:end_index]
-        
+
         if self.verbose:
             on_print(f"Extracted {len(extracted_text)} characters between '{start_string}' and '{end_string}'", Fore.WHITE + Style.DIM)
-            
+
         return extracted_text
 
-    def index_documents(self, allow_chunks=True, no_chunking_confirmation=False, split_paragraphs=False, additional_metadata=None, num_ctx=None, skip_existing=True, extract_start=None, extract_end=None, add_summary=True):
+    def index_documents(
+        self,
+        allow_chunks=True,
+        no_chunking_confirmation=False,
+        split_paragraphs=False,
+        additional_metadata=None,
+        num_ctx=None,
+        skip_existing=True,
+        extract_start=None,
+        extract_end=None,
+        add_summary=True,
+        *,
+        ctx:Context
+    ):
         """
         Index all text files in the root folder.
-        
+
         :param allow_chunks: Whether to chunk large documents.
         :param no_chunking_confirmation: Skip confirmation for chunking and extraction prompts.
         :param split_paragraphs: Whether to split markdown content into paragraphs.
@@ -153,20 +179,17 @@ class DocumentIndexer:
             on_print("\nOptional: You can extract only a specific part of each document for embedding computation.")
             on_print("This allows you to focus on relevant sections while still storing the full document.")
             use_extraction = on_user_input("Do you want to extract specific text sections for embedding? [y/n]: ").lower() in ['y', 'yes']
-            
+
             if use_extraction:
                 extract_start = on_user_input("Enter the start string (text that marks the beginning of the section): ").strip()
                 extract_end = on_user_input("Enter the end string (text that marks the end of the section): ").strip()
-                
+
                 if not extract_start or not extract_end:
                     on_print("Warning: Empty start or end string provided. Text extraction will be disabled.", Fore.YELLOW)
                     extract_start = None
                     extract_end = None
                 else:
                     on_print(f"Text extraction enabled: extracting content between '{extract_start}' and '{extract_end}'", Fore.GREEN)
-
-        if allow_chunks:
-            from langchain_text_splitters import RecursiveCharacterTextSplitter
 
         # Get the list of text files
         text_files = self.get_text_files()
@@ -177,7 +200,11 @@ class DocumentIndexer:
         progress_bar = None
         if self.verbose:
             # Progress bar for indexing
-            progress_bar = tqdm(total=len(text_files), desc="Indexing files", unit="file", bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt}")
+            progress_bar = tqdm(
+                total=len(text_files),
+                desc="Indexing files", unit="file",
+                bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt}"
+            )
 
         for file_path in text_files:
             if progress_bar:
@@ -199,13 +226,13 @@ class DocumentIndexer:
                 if not content:
                     on_print(f"An error occurred while reading file: {file_path}", Fore.RED)
                     continue
-                
+
                 # Add any additional metadata for the file
                 # Extract file name and base file information
                 file_name = os.path.basename(file_path)
                 file_name_without_ext = os.path.splitext(file_name)[0]
                 current_date = datetime.now().isoformat()
-                
+
                 # Create a more comprehensive metadata structure
                 file_metadata = {
                     'published': current_date,
@@ -216,17 +243,17 @@ class DocumentIndexer:
                     'id': document_id,
                     'filePath': file_path
                 }
-                
+
                 # Convert the file path to url and add it to the metadata
                 file_metadata['url'] = urljoin("file://", file_path)
-                
+
                 # If windows, convert the file path to a URI
                 if os.name == 'nt':
                     file_metadata['url'] = file_metadata['url'].replace("\\", "/")
-                    
+
                     # Replace the drive letter with "file:///" prefix
                     file_metadata['url'] = file_metadata['url'].replace("file://", "file:///")
-                
+
                 if additional_metadata and file_path in additional_metadata:
                     file_metadata.update(additional_metadata[file_path])
 
@@ -245,18 +272,24 @@ class DocumentIndexer:
                     chunks = []
                     # Use embedding_content for chunking (which may be extracted text)
                     content_to_chunk = embedding_content
-                    
+
                     # Split Markdown files into sections if needed
                     if is_html(file_path):
                         # Convert to Markdown before splitting
-                        markdown_splitter = MarkdownSplitter(extract_text_from_html(content_to_chunk), split_paragraphs=split_paragraphs)
+                        markdown_splitter = MarkdownSplitter(
+                            extract_text_from_html(content_to_chunk),
+                            split_paragraphs=split_paragraphs
+                        )
                         chunks = markdown_splitter.split()
                     elif is_markdown(file_path):
-                        markdown_splitter = MarkdownSplitter(content_to_chunk, split_paragraphs=split_paragraphs)
+                        markdown_splitter = MarkdownSplitter(
+                            content_to_chunk,
+                            split_paragraphs=split_paragraphs
+                        )
                         chunks = markdown_splitter.split()
                     else:
                         chunks = text_splitter.split_text(content_to_chunk)
-                    
+
                     # Generate document summary once if add_summary is enabled
                     document_summary = None
                     # Use summary_model for summary generation, fallback to current_model if available
@@ -283,7 +316,8 @@ class DocumentIndexer:
                                 temperature=0.3,
                                 no_bot_prompt=True,
                                 stream_active=False,
-                                num_ctx=num_ctx
+                                num_ctx=num_ctx,
+                                ctx=ctx
                             )
                             document_summary = f"[Document Summary: {summary_response.strip()}]\n\n"
                             if self.verbose:
@@ -292,7 +326,7 @@ class DocumentIndexer:
                             if self.verbose:
                                 on_print(f"Failed to generate summary: {e}", Fore.YELLOW)
                             document_summary = None
-                    
+
                     for i, chunk in enumerate(chunks):
                         chunk_id = f"{document_id}_{i}"
 
@@ -303,19 +337,19 @@ class DocumentIndexer:
                                 if self.verbose:
                                     on_print(f"Skipping existing chunk: {chunk_id}", Fore.WHITE + Style.DIM)
                                 continue
-                        
+
                         # Prepend document summary to chunk if available
                         chunk_with_summary = chunk
                         if document_summary:
                             chunk_with_summary = document_summary + chunk
-                        
+
                         # Embed the chunk content (from extracted text) with summary prepended
                         embedding = None
                         if self.model:
                             ollama_options = {}
                             if num_ctx:
                                 ollama_options["num_ctx"] = num_ctx
-                                
+
                             if self.verbose:
                                 embedding_info = "using extracted text" if extract_start and extract_end else "using full content"
                                 summary_info = " with summary" if document_summary else ""
@@ -330,13 +364,13 @@ class DocumentIndexer:
                                 options=ollama_options
                             )
                             embedding = response["embedding"]
-                        
+
                         # Store the chunk with summary prepended
                         chunk_metadata = file_metadata.copy()
                         chunk_metadata['chunk_index'] = i
                         if document_summary:
                             chunk_metadata['has_summary'] = True
-                        
+
                         # Upsert the chunk with summary and embedding
                         if embedding:
                             self.collection.upsert(
@@ -351,7 +385,7 @@ class DocumentIndexer:
                                 metadatas=[chunk_metadata],
                                 ids=[chunk_id]
                             )
-                    
+
                     # Store the full original document in the SQLite database if available
                     # This allows retrieval of complete documents when chunks are found
                     if self.full_doc_store and not self.full_doc_store.document_exists(document_id):
@@ -365,7 +399,7 @@ class DocumentIndexer:
                         ollama_options = {}
                         if num_ctx:
                             ollama_options["num_ctx"] = num_ctx
-                            
+
                         if self.verbose:
                             embedding_info = "using extracted text" if extract_start and extract_end else "using full content"
                             on_print(f"Generating embedding for document {document_id} using {self.model} ({embedding_info})", Fore.WHITE + Style.DIM)
@@ -408,7 +442,7 @@ def is_html(file_path):
     # Check for .htm and .html extensions
     if file_path.endswith(".htm") or file_path.endswith(".html") or file_path.endswith(".xhtml"):
         return True
-    
+
     # Check for HTML files without extensions
     try:
         with open(file_path, 'r') as f:
@@ -416,15 +450,15 @@ def is_html(file_path):
             return first_line and (first_line.lower().startswith('<!doctype html>') or first_line.lower().startswith('<html'))
     except Exception:
         return False
-    
+
 def is_markdown(file_path):
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"The file {file_path} does not exist.")
-    
+
     # Automatically consider .md files as Markdown
     if file_path.endswith('.md'):
         return True
-    
+
     # If the file is not .md, but is .txt, proceed with content checking
     if not file_path.endswith('.txt'):
         raise ValueError(f"The file {file_path} is neither .md nor .txt.")
@@ -432,11 +466,10 @@ def is_markdown(file_path):
     with open(file_path, 'r', encoding='utf-8') as f:
         for line in f:
             line = line.strip()
-            
+
             # Check for common Markdown patterns
             if re.match(r'^#{1,6}\s', line):  # Heading (e.g., # Heading)
                 return True
-    
+
     # If no Markdown features are found, assume it's a regular text file
     return False
-    

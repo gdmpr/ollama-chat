@@ -7,8 +7,8 @@ from colorama import Fore
 import requests
 from bs4 import BeautifulSoup
 
-from ollama_chat.core import on_print
-from ollama_chat.core import extract_text_from_html
+from ollama_chat.core.utils import on_print
+from ollama_chat.core.extract_text import extract_text_from_html
 
 class SimpleWebScraper:
     def __init__(self, base_url, output_dir="downloaded_site", file_types=None, restrict_to_base=True, convert_to_markdown=False, verbose=False):
@@ -62,7 +62,7 @@ class SimpleWebScraper:
             credentials = f"{self.username}:{self.password}"
             encoded_credentials = base64.b64encode(credentials.encode('utf-8')).decode('utf-8')
             headers['Authorization'] = f"Basic {encoded_credentials}"
-        
+
         try:
             response = requests.get(url, headers=headers, timeout=10)
             if response.status_code == 401:

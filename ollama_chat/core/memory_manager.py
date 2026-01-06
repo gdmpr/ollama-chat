@@ -1,9 +1,14 @@
 import json
+import os
 from datetime import datetime
 
-from ollama_chat.core import LongTermMemoryManager
-from ollama_chat.core import on_print
-from ollama_chat.core import ask_ollama
+import ollama
+from colorama import Fore, Style
+
+from ollama_chat.core.context import Context
+from ollama_chat.core.long_term_memory_manager import LongTermMemoryManager
+from ollama_chat.core.utils import on_print
+from ollama_chat.core.ollama import ask_ollama
 
 class MemoryManager:
     def __init__(self, collection_name, chroma_client, selected_model, embedding_model_name, verbose=False, num_ctx=None, long_term_memory_file="long_term_memory.json"):
@@ -24,7 +29,7 @@ class MemoryManager:
         self.num_ctx = num_ctx
         self.long_term_memory_manager = LongTermMemoryManager(selected_model, verbose, num_ctx, memory_file=long_term_memory_file)
 
-    def preprocess_conversation(self, conversation):
+    def preprocess_conversation(self, conversation,  ctx:Context):
         """
         Preprocess the conversation to filter out tool or function role entries, and then summarize key points.
 
@@ -45,7 +50,7 @@ class MemoryManager:
 
         # Define an elaborated system prompt for the LLM to generate a high-quality summary
         system_prompt = """
-        You are a memory assistant tasked with summarizing conversations for future reference. 
+        You are a memory assistant tasked with summarizing conversations for future reference.
         Your goal is to identify the key points, user intents, important questions, decisions made, and any personal information shared by the user.
         Focus on gathering and summarizing:
         - Core ideas and user questions
@@ -62,14 +67,23 @@ class MemoryManager:
         """
 
         # Use the ask_ollama function to summarize key points
-        summary = ask_ollama(system_prompt, user_input, self.selected_model, temperature=0.1, no_bot_prompt=True, stream_active=False, num_ctx=self.num_ctx)
-        
+        summary = ask_ollama(
+            system_prompt,
+            user_input,
+            self.selected_model,
+            temperature=0.1,
+            no_bot_prompt=True,
+            stream_active=False,
+            num_ctx=self.num_ctx,
+            ctx = ctx
+        )
+
         return summary
 
     def generate_embedding(self, text):
         """
         Generate embeddings for a given text using the specified embedding model.
-        
+
         :param text: The input text to generate embeddings for.
         :return: The embedding vector.
         """
@@ -87,7 +101,7 @@ class MemoryManager:
             embedding = response["embedding"]
         return embedding
 
-    def add_memory(self, conversation, metadata=None):
+    def add_memory(self, conversation, metadata=None, *, ctx:Context):
         """
         Preprocess and store a conversation in memory by summarizing it and storing the summary.
 
@@ -95,15 +109,15 @@ class MemoryManager:
         :param metadata: Additional metadata to store with the memory (e.g., timestamp, user info).
         """
         conversation_id = datetime.now().strftime("%Y%m%d%H%M%S")
-        
+
         # Preprocess the conversation to summarize the key points
-        summarized_conversation = self.preprocess_conversation(conversation)
+        summarized_conversation = self.preprocess_conversation(conversation,  ctx=ctx)
 
         if len(summarized_conversation) == 0:
             if self.verbose:
                 on_print("Empty conversation. No memory added.", Fore.WHITE + Style.DIM)
             return False
-        
+
         # Create metadata if none is provided
         if metadata is None:
             # Format the metadata with a timestamp in a human-readable format (July 1, 2022, 12:00 PM)
@@ -120,7 +134,7 @@ class MemoryManager:
             ids=[conversation_id],
             embeddings=[embedding]
         )
-        
+
         if self.verbose:
             on_print(f"Memory for conversation {conversation_id} added. Summary: {summarized_conversation}", Fore.WHITE + Style.DIM)
 
@@ -130,7 +144,7 @@ class MemoryManager:
         except:
             user_id = os.environ['USER']
 
-        self.long_term_memory_manager.process_conversation(user_id, conversation)
+        self.long_term_memory_manager.process_conversation(user_id, conversation, ctx=ctx)
 
         if self.verbose:
             on_print("Long-term memory updated.", Fore.WHITE + Style.DIM)
@@ -182,17 +196,16 @@ class MemoryManager:
 
             filtered_results['documents'].append(document)
             filtered_results['metadatas'].append(metadata)
-        
+
         return filtered_results['documents'], filtered_results['metadatas']
 
     def handle_user_query(self, conversation, query=None):
         """
         Handle a user query by updating the 'system' part of the conversation with relevant memories in XML markup.
-        
+
         :param conversation: The current conversation array (list of role/content dictionaries).
         :return: Updated conversation with a modified system prompt containing memory placeholders in XML format.
         """
-        import json
 
         # Find the latest user input from the conversation (role 'user')
         user_input = query
@@ -221,7 +234,7 @@ class MemoryManager:
             # Define the memory section using XML-style tags
             memory_start_tag = "<short-term-memories>"
             memory_end_tag = "</short-term-memories>"
-            
+
             # Remove any previous memory section if it exists
             if memory_start_tag in original_system_prompt:
                 original_system_prompt = original_system_prompt.split(memory_start_tag)[0].strip()

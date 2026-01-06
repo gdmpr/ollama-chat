@@ -19,7 +19,7 @@ license = { text = "MIT" }
 authors = [
   { name = "jeromeboivin" },
   { name = "gdmpr" }
-]]
+]
 
 ########################################
 # Runtime dependencies
