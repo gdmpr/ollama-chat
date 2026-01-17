@@ -2,7 +2,7 @@ import os
 
 from colorama import Fore, Style
 from ollama_chat.core.context import Context
-from ollama_chat.core import utils
+from ollama_chat.core import plugins
 
 def create_file(file_path, content, ctx:Context,  encoding="utf-8"):
     """
@@ -29,7 +29,7 @@ def create_file(file_path, content, ctx:Context,  encoding="utf-8"):
             ctx.session_created_files.append(file_path)
 
         if ctx.verbose:
-            utils.on_print(f"Successfully created file: {file_path}", Fore.GREEN + Style.DIM)
+            plugins.on_print(f"Successfully created file: {file_path}", Fore.GREEN + Style.DIM)
 
         return f"File created successfully: {file_path}"
     except Exception as e:
@@ -62,7 +62,7 @@ def delete_file(file_path,  *,  ctx:Context):
         ctx.session_created_files.remove(file_path)
 
         if ctx.verbose:
-            utils.on_print(f"Successfully deleted file: {file_path}", Fore.GREEN + Style.DIM)
+            plugins.on_print(f"Successfully deleted file: {file_path}", Fore.GREEN + Style.DIM)
 
         return f"File deleted successfully: {file_path}"
     except Exception as e:
@@ -89,7 +89,7 @@ def read_file(file_path, ctx:Context,  encoding="utf-8"):
             content = f.read()
 
         if ctx.verbose:
-            utils.on_print(f"Successfully read file: {file_path}", Fore.GREEN + Style.DIM)
+            plugins.on_print(f"Successfully read file: {file_path}", Fore.GREEN + Style.DIM)
 
         return content
     except Exception as e:

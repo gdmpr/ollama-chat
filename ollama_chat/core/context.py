@@ -12,20 +12,32 @@ class Context:
     """
     This object is the unique store for application-wide parameters and settings.
     """
-    memory_collection_name : str
-    long_term_memory_file : str
-    number_of_documents_to_return_from_vector_db : int
+    # TODO! Do a clear separation of the conversation memory and long-term memory: the user shoud can manage each separately. I imagine each coud be set to on,off or read only.
+    # TODO! The same collection is used for web cache and conversation memory, consider if it may be better to separate them
+    # Memory
+    use_memory_manager : bool = False
+
+    # Conversation memory
+    memory_collection_name : str = ""
+
+    # Long-term memory
+    long_term_memory_file : str = ""
+
+    # Models
+    alternate_model : str = None
+    current_model : str = None
+    embeddings_model : str = None
+    model : str = None
+    thinking_model : str = None
+
     verbose: bool = False
+    number_of_documents_to_return_from_vector_db : int = 8
     no_system_role:bool = False
     use_openai : bool = False
     use_azure_openai : bool = False
     syntax_highlighting : bool = True
     think_mode_on : bool = False
-    alternate_model : str = None
     interactive_mode : bool = True
-    chroma_client_host : str = "localhost"
-    chroma_client_port : int = 8000
-    chroma_db_path : str = None
     openai_client = None
     plugins_folder : str = None
     preferred_collection_name : str = None
@@ -46,19 +58,15 @@ class Context:
     extract_end : str = None
     auto_start : bool = False
     auto_save : bool = False
-    embeddings_model : str = None
     prompt : str = None
     stream : bool = True
     output : str = None
     other_instance_url : str = None
     system_prompt_placeholders_json : str = None
-    model : str = None
-    thinking_model : str = None
     thinking_model_reasoning_pattern : str = None
     listening_port : int = 8000
     user_name : str = None
     anonymous : bool = False
-    memory : str = False
     context_window : int = None
     chatbot : str = None
     full_docs_db : str = 'full_documents.db'
@@ -79,7 +87,6 @@ class Context:
     current_collection_name : str = None
     selected_tools : List[str] = field(default_factory=list)
     session_created_files : List[str] = field(default_factory=list)
-    current_model : str = None
     chatbots : List[str] = field(default_factory=list)
     #memory_manager : MemoryManager = None
     memory_manager: Optional["MemoryManager"] = field(default=None)
@@ -96,6 +103,10 @@ class Context:
     web_search_region : str = "wt-wt"
     web_search_show_intermediate : bool = False
 
+    # ChromaDB settings
+    #chroma_client_host : str = "localhost"
+    #chroma_client_port : int = 8000
+    #chroma_db_path : str = None
     chroma_client: ClientAPI = None
 
     # RAG optimization parameters

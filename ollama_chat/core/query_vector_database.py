@@ -5,13 +5,12 @@ import traceback
 
 
 from tqdm import tqdm
-import chromadb
 import ollama
 from colorama import Fore, Style
 import numpy as np
 from rank_bm25 import BM25Okapi
 
-from ollama_chat.core import utils
+from ollama_chat.core import plugins
 from ollama_chat.core.context import Context
 from ollama_chat.core.ollama import ask_ollama
 
@@ -32,7 +31,7 @@ def query_vector_database(question,  collection_name=None, n_results=None, answe
         if ctx.use_openai or ctx.use_azure_openai:
             include_full_docs = True
             if ctx.verbose:
-                utils.on_print("Auto-enabled full document retrieval for OpenAI model", Fore.WHITE + Style.DIM)
+                plugins.on_print("Auto-enabled full document retrieval for OpenAI model", Fore.WHITE + Style.DIM)
 
     # If question is empty, return empty string
     if not question or len(question) == 0:
@@ -63,8 +62,7 @@ def query_vector_database(question,  collection_name=None, n_results=None, answe
             answer_distance_threshold = 0
 
     # If answer_distance_threshold is negative, set it to 0
-    if answer_distance_threshold < 0:
-        answer_distance_threshold = 0
+    answer_distance_threshold = max(answer_distance_threshold, 0)
 
     if not query_embeddings_model:
         query_embeddings_model = ctx.embeddings_model
@@ -73,7 +71,7 @@ def query_vector_database(question,  collection_name=None, n_results=None, answe
         set_current_collection(collection_name, create_new_collection_if_not_found=False,  ctx=ctx)
 
     if not ctx.collection:
-        utils.on_print("No ChromaDB collection loaded.", Fore.RED)
+        plugins.on_print("No ChromaDB collection loaded.", Fore.RED)
         collection_name, _ = prompt_for_vector_database_collection(ctx=ctx)
         if not collection_name:
             if return_metadata:
@@ -123,11 +121,11 @@ def query_vector_database(question,  collection_name=None, n_results=None, answe
         if expanded_query:
             question += "\n" + expanded_query
             if ctx.verbose:
-                utils.on_print("Expanded query:", Fore.WHITE + Style.DIM)
-                utils.on_print(question, Fore.WHITE + Style.DIM)
+                plugins.on_print("Expanded query:", Fore.WHITE + Style.DIM)
+                plugins.on_print(question, Fore.WHITE + Style.DIM)
 
     if ctx.verbose:
-        utils.on_print(f"Using query embeddings model: {query_embeddings_model}", Fore.WHITE + Style.DIM)
+        plugins.on_print(f"Using query embeddings model: {query_embeddings_model}", Fore.WHITE + Style.DIM)
 
     if query_embeddings_model is None:
         result = ctx.collection.query(
@@ -179,7 +177,7 @@ def query_vector_database(question,  collection_name=None, n_results=None, answe
             effective_threshold = adaptive_threshold
 
         if ctx.verbose:
-            utils.on_print(f"Adaptive distance threshold: {effective_threshold:.4f} (min: {min_distance:.4f}, adaptive: {adaptive_threshold:.4f}, percentile: {percentile_threshold if len(distances) >= 4 else 'N/A'})", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Adaptive distance threshold: {effective_threshold:.4f} (min: {min_distance:.4f}, adaptive: {adaptive_threshold:.4f}, percentile: {percentile_threshold if len(distances) >= 4 else 'N/A'})", Fore.WHITE + Style.DIM)
     else:
         effective_threshold = float('inf')  # No filtering
 
@@ -216,13 +214,14 @@ def query_vector_database(question,  collection_name=None, n_results=None, answe
         # Apply adaptive distance filtering
         if use_adaptive_filtering and distance > effective_threshold:
             if ctx.verbose:
-                utils.on_print(f"Filtered out result with distance {distance:.4f} > {effective_threshold:.4f}", Fore.WHITE + Style.DIM)
+                plugins.on_print(f"Filtered out result with distance {distance:.4f} > {effective_threshold:.4f}", Fore.WHITE + Style.DIM)
             continue
 
         # Also apply user-specified threshold if provided
-        if answer_distance_threshold > 0 and distance > answer_distance_threshold:
+        if distance > answer_distance_threshold > 0:
+
             if ctx.verbose:
-                utils.on_print(f"Filtered out result with distance {distance:.4f} > {answer_distance_threshold:.4f}", Fore.WHITE + Style.DIM)
+                plugins.on_print(f"Filtered out result with distance {distance:.4f} > {answer_distance_threshold:.4f}", Fore.WHITE + Style.DIM)
             continue
 
         reranked_results.append((idx, metadata, distance, document, bm25_score, hybrid_score))
@@ -240,7 +239,7 @@ def query_vector_database(question,  collection_name=None, n_results=None, answe
 
     for idx, metadata, distance, document, bm25_score, hybrid_score in reranked_results:
         if ctx.verbose:
-            utils.on_print(f"Result - Distance: {distance:.4f}, BM25: {bm25_score:.4f}, Hybrid: {hybrid_score:.4f}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Result - Distance: {distance:.4f}, BM25: {bm25_score:.4f}, Hybrid: {hybrid_score:.4f}", Fore.WHITE + Style.DIM)
 
         # Format the answer with the title, content, and URL
         title = metadata.get("title", "")
@@ -259,7 +258,7 @@ def query_vector_database(question,  collection_name=None, n_results=None, answe
                 if full_content:
                     full_documents_map[doc_id] = full_content
                     if ctx.verbose:
-                        utils.on_print(f"Retrieved full document for: {doc_id}", Fore.WHITE + Style.DIM)
+                        plugins.on_print(f"Retrieved full document for: {doc_id}", Fore.WHITE + Style.DIM)
 
             # If we have the full document, include it
             if doc_id in full_documents_map:
@@ -304,6 +303,7 @@ def query_vector_database(question,  collection_name=None, n_results=None, answe
     return result_text
 
 def preprocess_text(text):
+    # WARNING: This collection of stop words makes this function suitable only to process english language
     stop_words = ['i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you',
         "you're", "you've", "you'll", "you'd", 'your', 'yours', 'yourself', 'yourselves', 'he',
         'him', 'his', 'himself', 'she', "she's", 'her', 'hers', 'herself', 'it', "it's", 'its',
@@ -346,10 +346,16 @@ def preprocess_text(text):
 
 
 
-def set_current_collection(collection_name, description=None, create_new_collection_if_not_found=True,  *,  ctx:Context):
+def set_current_collection(
+    collection_name,
+    description=None,
+    create_new_collection_if_not_found=True,
+    *,
+    ctx:Context
+):
     #global collection
 
-    load_chroma_client(ctx=ctx)
+    #load_chroma_client(ctx=ctx)
 
     if not collection_name or not ctx.chroma_client:
         ctx.collection = None
@@ -369,7 +375,7 @@ def set_current_collection(collection_name, description=None, create_new_collect
                     }
             })
         else:
-            ctx.collection = ctx.chroma_client.get_collection(name=ctx.collection_name)
+            ctx.collection = ctx.chroma_client.get_collection(name=collection_name)
 
         # Update description metadata if provided
         if description:
@@ -379,31 +385,30 @@ def set_current_collection(collection_name, description=None, create_new_collect
                 existing_metadata["description"] = description
                 ctx.collection.modify(metadata=existing_metadata)
                 if ctx.verbose:
-                    utils.on_print(f"Updated description for collection {collection_name}.", Fore.WHITE + Style.DIM)
+                    plugins.on_print(f"Updated description for collection {collection_name}.", Fore.WHITE + Style.DIM)
 
         if ctx.verbose:
-            utils.on_print(f"Collection {collection_name} loaded.", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Collection {collection_name} loaded.", Fore.WHITE + Style.DIM)
 
         ctx.current_collection_name = collection_name
-    except:
-        raise Exception(f"Collection {collection_name} not found")
-
+    except Exception as exc:
+        raise Exception(f"Collection {collection_name} not found") from exc
 
 def prompt_for_vector_database_collection(prompt_create_new=True, include_web_cache=False,  *,  ctx:Context):
 
-    load_chroma_client(ctx=ctx)
+    #load_chroma_client(ctx=ctx)
 
     # List existing collections
     collections = None
     if ctx.chroma_client:
         collections = ctx.chroma_client.list_collections()
     else:
-        utils.on_print("ChromaDB is not running.", Fore.RED)
+        plugins.on_print("ChromaDB is not running.", Fore.RED)
 
     if not collections:
-        utils.on_print("No collections found", Fore.RED)
-        new_collection_name = utils.on_user_input("Enter a new collection to create: ")
-        new_collection_desc = utils.on_user_input("Enter a description for the new collection: ")
+        plugins.on_print("No collections found", Fore.RED)
+        new_collection_name = plugins.on_user_input("Enter a new collection to create: ")
+        new_collection_desc = plugins.on_user_input("Enter a description for the new collection: ")
         return new_collection_name, new_collection_desc
 
     # Filter out collections based on parameters
@@ -418,68 +423,49 @@ def prompt_for_vector_database_collection(prompt_create_new=True, include_web_ca
         filtered_collections.append(collection)
 
     if not filtered_collections:
-        utils.on_print("No collections found", Fore.RED)
-        new_collection_name = utils.on_user_input("Enter a new collection to create: ")
-        new_collection_desc = utils.on_user_input("Enter a description for the new collection: ")
+        plugins.on_print("No collections found", Fore.RED)
+        new_collection_name = plugins.on_user_input("Enter a new collection to create: ")
+        new_collection_desc = plugins.on_user_input("Enter a description for the new collection: ")
         return new_collection_name, new_collection_desc
 
     # Ask user to choose a collection
-    utils.on_print("Available collections:", Style.RESET_ALL)
+    plugins.on_print("Available collections:", Style.RESET_ALL)
     for i, collection in enumerate(filtered_collections):
         collection_name = collection.name
 
-        if type(collection.metadata) == dict:
+        if isinstance(collection.metadata, dict):
             collection_metadata = collection.metadata.get("description", "No description")
         else:
             collection_metadata = "No description"
 
         # Add indicator for web cache collection
         cache_indicator = " (Web Cache)" if collection_name == ctx.web_cache_collection_name else ""
-        utils.on_print(f"{i}. {collection_name}{cache_indicator} - {collection_metadata}")
+        plugins.on_print(f"{i}. {collection_name}{cache_indicator} - {collection_metadata}")
 
     if prompt_create_new:
         # Propose to create a new collection
-        utils.on_print(f"{len(filtered_collections)}. Create a new collection")
+        plugins.on_print(f"{len(filtered_collections)}. Create a new collection")
 
-    choice = int(utils.on_user_input("Enter the number of your preferred collection [0]: ") or 0)
+    choice = int(plugins.on_user_input("Enter the number of your preferred collection [0]: ") or 0)
 
     if prompt_create_new and choice == len(filtered_collections):
-        new_collection_name = utils.on_user_input("Enter a new collection to create: ")
-        new_collection_desc = utils.on_user_input("Enter a description for the new collection: ")
+        new_collection_name = plugins.on_user_input("Enter a new collection to create: ")
+        new_collection_desc = plugins.on_user_input("Enter a description for the new collection: ")
         return new_collection_name, new_collection_desc
 
     return filtered_collections[choice].name, None  # No new description needed for existing collections
 
 
-def load_chroma_client(*,  ctx:Context):
-
-    if ctx.chroma_client:
-        return
-
-    # Initialize the ChromaDB client
-    try:
-        if ctx.chroma_db_path:
-            # Set environment variable ANONYMIZED_TELEMETRY to disable telemetry
-            os.environ["ANONYMIZED_TELEMETRY"] = "0"
-            ctx.chroma_client = chromadb.PersistentClient(path=ctx.chroma_db_path)
-        elif ctx.chroma_client_host and 0 < ctx.chroma_client_port:
-            ctx.chroma_client = chromadb.HttpClient(host=ctx.chroma_client_host, port=ctx.chroma_client_port)
-        else:
-            raise ValueError("Invalid Chroma client configuration")
-    except:
-        if ctx.verbose:
-            utils.on_print("ChromaDB client could not be initialized. Please check the host and port.", Fore.RED + Style.DIM)
-        ctx.chroma_client = None
 
 def edit_collection_metadata(collection_name,  *,  ctx:Context):
     """
     Interactively edits the specified ChromaDB collection description.
     """
 
-    load_chroma_client(ctx=ctx)
+    #load_chroma_client(ctx=ctx)
 
     if not collection_name or not ctx.chroma_client:
-        utils.on_print("Invalid collection name or ChromaDB client not initialized.", Fore.RED)
+        plugins.on_print("Invalid collection name or ChromaDB client not initialized.", Fore.RED)
         return
 
     try:
@@ -488,40 +474,41 @@ def edit_collection_metadata(collection_name,  *,  ctx:Context):
             current_description = collection.metadata.get("description", "No description")
         else:
             current_description = "No description"
-        utils.on_print(f"Current description: {current_description}")
+        plugins.on_print(f"Current description: {current_description}")
 
-        new_description = utils.on_user_input("Enter the new description: ")
+        new_description = plugins.on_user_input("Enter the new description: ")
         existing_metadata = collection.metadata or {}
         existing_metadata["description"] = new_description
         existing_metadata["updated"] = str(datetime.now())
         collection.modify(metadata=existing_metadata)
 
-        utils.on_print(f"Description updated for collection {collection_name}.", Fore.GREEN)
-    except:
-        raise Exception(f"Collection {collection_name} not found")
+        plugins.on_print(f"Description updated for collection {collection_name}.", Fore.GREEN)
+    except Exception as exc:
+        raise Exception(f"Collection {collection_name} not found") from exc
+
 
 def delete_collection(collection_name,  *,  ctx:Context):
     """
     Interactively deletes the specified collection in the ChromaDB database.
     """
 
-    load_chroma_client(ctx=ctx)
+    #load_chroma_client(ctx=ctx)
 
     if not ctx.chroma_client:
         return
 
     # Ask for user confirmation before deleting
-    confirmation = utils.on_user_input(f"Are you sure you want to delete the collection '{collection_name}'? (y/n): ").lower()
+    confirmation = plugins.on_user_input(f"Are you sure you want to delete the collection '{collection_name}'? (y/n): ").lower()
 
     if confirmation not in ('y', 'yes'):
-        utils.on_print("Collection deletion canceled.", Fore.YELLOW)
+        plugins.on_print("Collection deletion canceled.", Fore.YELLOW)
         return
 
     try:
         ctx.chroma_client.delete_collection(name=collection_name)
-        utils.on_print(f"Collection {collection_name} deleted.", Fore.GREEN)
+        plugins.on_print(f"Collection {collection_name} deleted.", Fore.GREEN)
     except Exception as e:
-        utils.on_print(f"Collection {collection_name} not found: {e}.", Fore.RED)
+        plugins.on_print(f"Collection {collection_name} not found: {e}.", Fore.RED)
 
 def catchup_full_documents_from_chromadb(*, ctx:Context, verbose=False):
     """
@@ -534,7 +521,7 @@ def catchup_full_documents_from_chromadb(*, ctx:Context, verbose=False):
     :param verbose: Enable verbose logging
     """
     if verbose:
-        utils.on_print(f"Starting catchup for collection: {ctx.collection_name}", Fore.CYAN)
+        plugins.on_print(f"Starting catchup for collection: {ctx.collection_name}", Fore.CYAN)
 
     try:
         # Get the collection
@@ -545,14 +532,14 @@ def catchup_full_documents_from_chromadb(*, ctx:Context, verbose=False):
         all_results = collection.get(include=['metadatas'])
 
         if not all_results or not all_results.get('ids'):
-            utils.on_print(f"No documents found in collection {ctx.collection_name}", Fore.YELLOW)
+            plugins.on_print(f"No documents found in collection {ctx.collection_name}", Fore.YELLOW)
             return 0
 
         ids = all_results['ids']
         metadatas = all_results['metadatas']
 
         if verbose:
-            utils.on_print(f"Found {len(ids)} embeddings in collection", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Found {len(ids)} embeddings in collection", Fore.WHITE + Style.DIM)
 
         # Extract unique document IDs and file paths from chunk metadata
         # Chunk IDs follow pattern: {document_id}_{chunk_index}
@@ -583,7 +570,7 @@ def catchup_full_documents_from_chromadb(*, ctx:Context, verbose=False):
                     document_files[doc_id] = file_path
 
         if verbose:
-            utils.on_print(f"Found {len(document_files)} unique documents to process", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Found {len(document_files)} unique documents to process", Fore.WHITE + Style.DIM)
 
         # Process each document
         indexed_count = 0
@@ -603,13 +590,13 @@ def catchup_full_documents_from_chromadb(*, ctx:Context, verbose=False):
                 if ctx.full_doc_store.document_exists(doc_id):
                     skipped_count += 1
                     if verbose:
-                        utils.on_print(f"Skipping already indexed document: {doc_id}", Fore.WHITE + Style.DIM)
+                        plugins.on_print(f"Skipping already indexed document: {doc_id}", Fore.WHITE + Style.DIM)
                     continue
 
                 # Check if file still exists
                 if not os.path.exists(file_path):
                     if verbose:
-                        utils.on_print(f"File not found: {file_path}", Fore.YELLOW)
+                        plugins.on_print(f"File not found: {file_path}", Fore.YELLOW)
                     error_count += 1
                     continue
 
@@ -624,7 +611,7 @@ def catchup_full_documents_from_chromadb(*, ctx:Context, verbose=False):
                             full_content = f.read()
                     except Exception as e:
                         if verbose:
-                            utils.on_print(f"Error reading file {file_path}: {e}", Fore.RED)
+                            plugins.on_print(f"Error reading file {file_path}: {e}", Fore.RED)
                         error_count += 1
                         continue
 
@@ -635,7 +622,7 @@ def catchup_full_documents_from_chromadb(*, ctx:Context, verbose=False):
                     error_count += 1
 
             except Exception as e:
-                utils.on_print(f"Error processing document {doc_id}: {e}", Fore.RED)
+                plugins.on_print(f"Error processing document {doc_id}: {e}", Fore.RED)
                 error_count += 1
                 continue
 
@@ -643,15 +630,15 @@ def catchup_full_documents_from_chromadb(*, ctx:Context, verbose=False):
             progress_bar.close()
 
         # Print summary
-        utils.on_print("\nCatchup completed:", Fore.GREEN)
-        utils.on_print(f"  Indexed: {indexed_count} documents", Fore.GREEN)
-        utils.on_print(f"  Skipped (already indexed): {skipped_count} documents", Fore.YELLOW)
-        utils.on_print(f"  Errors: {error_count} documents", Fore.RED if error_count > 0 else Fore.WHITE)
+        plugins.on_print("\nCatchup completed:", Fore.GREEN)
+        plugins.on_print(f"  Indexed: {indexed_count} documents", Fore.GREEN)
+        plugins.on_print(f"  Skipped (already indexed): {skipped_count} documents", Fore.YELLOW)
+        plugins.on_print(f"  Errors: {error_count} documents", Fore.RED if error_count > 0 else Fore.WHITE)
 
         return indexed_count
 
     except Exception as e:
-        utils.on_print(f"Error during catchup: {e}", Fore.RED)
+        plugins.on_print(f"Error during catchup: {e}", Fore.RED)
         if verbose:
             traceback.print_exc()
         return 0

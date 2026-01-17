@@ -7,11 +7,22 @@ from colorama import Fore, Style
 
 from ollama_chat.core.context import Context
 from ollama_chat.core.long_term_memory_manager import LongTermMemoryManager
-from ollama_chat.core.utils import on_print
+from ollama_chat.core import plugins
 from ollama_chat.core.ollama import ask_ollama
 
 class MemoryManager:
-    def __init__(self, collection_name, chroma_client, selected_model, embedding_model_name, verbose=False, num_ctx=None, long_term_memory_file="long_term_memory.json"):
+    def __init__(
+        self,
+        collection_name,
+        chroma_client,
+        selected_model,
+        embedding_model_name,
+        verbose=False,
+        num_ctx=None,
+        long_term_memory_file="long_term_memory.json",
+        *,
+        ctx:Context
+    ):
         """
         Initialize the MemoryManager with a specific ChromaDB collection.
 
@@ -27,7 +38,13 @@ class MemoryManager:
         self.collection = self.client.get_or_create_collection(name=self.collection_name)
         self.verbose = verbose
         self.num_ctx = num_ctx
-        self.long_term_memory_manager = LongTermMemoryManager(selected_model, verbose, num_ctx, memory_file=long_term_memory_file)
+        self.long_term_memory_manager = LongTermMemoryManager(
+            selected_model,
+            verbose,
+            num_ctx,
+            memory_file=long_term_memory_file,
+            ctx=ctx
+        )
 
     def preprocess_conversation(self, conversation,  ctx:Context):
         """
@@ -99,6 +116,11 @@ class MemoryManager:
                 options=ollama_options
             )
             embedding = response["embedding"]
+        else:
+            # TODO! Maybe give an error while loading parameters if --memory is set e no embeddings model is specificed
+            if self.verbose:
+                plugins.on_print("Cannot create embeddings, embedding_model_name is not set.", Fore.RED + Style.DIM)
+
         return embedding
 
     def add_memory(self, conversation, metadata=None, *, ctx:Context):
@@ -115,7 +137,7 @@ class MemoryManager:
 
         if len(summarized_conversation) == 0:
             if self.verbose:
-                on_print("Empty conversation. No memory added.", Fore.WHITE + Style.DIM)
+                plugins.on_print("Empty conversation. No memory added.", Fore.WHITE + Style.DIM)
             return False
 
         # Create metadata if none is provided
@@ -136,7 +158,7 @@ class MemoryManager:
         )
 
         if self.verbose:
-            on_print(f"Memory for conversation {conversation_id} added. Summary: {summarized_conversation}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Memory for conversation {conversation_id} added. Summary: {summarized_conversation}", Fore.WHITE + Style.DIM)
 
         user_id = "anonymous"
         try:
@@ -147,57 +169,10 @@ class MemoryManager:
         self.long_term_memory_manager.process_conversation(user_id, conversation, ctx=ctx)
 
         if self.verbose:
-            on_print("Long-term memory updated.", Fore.WHITE + Style.DIM)
+            plugins.on_print("Long-term memory updated.", Fore.WHITE + Style.DIM)
 
         return True
 
-    def retrieve_relevant_memory(self, query_text, top_k=3, answer_distance_threshold=200):
-        """
-        Retrieve the most relevant memories based on the given query.
-
-        :param query_text: The query or question for which relevant memories should be retrieved.
-        :param top_k: Number of relevant memories to retrieve.
-        :return: A list of the top-k most relevant memories.
-        """
-        if self.verbose:
-            on_print(f"Retrieving relevant memories for query: {query_text}", Fore.WHITE + Style.DIM)
-
-        # Generate an embedding for the query
-        query_embedding = self.generate_embedding(query_text)
-
-        if query_embedding is None:
-            return [], []
-
-        # Query the memory collection for relevant memories
-        results = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k
-        )
-
-        documents = results["documents"][0]
-        distances = results["distances"][0]
-        metadatas = results["metadatas"][0]
-
-        # Filter the results based on the answer distance threshold
-        filtered_results = {
-            'documents': [],
-            'metadatas': []
-        }
-        for metadata, answer_distance, document in zip(metadatas, distances, documents):
-            if answer_distance_threshold > 0 and answer_distance > answer_distance_threshold:
-                if self.verbose:
-                    on_print(f"Answer distance: {answer_distance} > {answer_distance_threshold}. Skipping memory.", Fore.WHITE + Style.DIM)
-                continue
-
-            if self.verbose:
-                on_print(f"Answer distance: {answer_distance}", Fore.WHITE + Style.DIM)
-                on_print(f"Memory: {document}", Fore.WHITE + Style.DIM)
-                on_print(f"Metadata: {metadata}", Fore.WHITE + Style.DIM)
-
-            filtered_results['documents'].append(document)
-            filtered_results['metadatas'].append(metadata)
-
-        return filtered_results['documents'], filtered_results['metadatas']
 
     def handle_user_query(self, conversation, query=None):
         """
@@ -252,11 +227,94 @@ class MemoryManager:
                 system_prompt_entry['content'] = f"{original_system_prompt}\n\n{memory_section}"
 
                 if self.verbose:
-                    on_print(f"System prompt updated with relevant memories:\n{system_prompt_entry['content']}", Fore.WHITE + Style.DIM)
+                    plugins.on_print(
+                        f"System prompt updated with relevant memories:\n{system_prompt_entry['content']}",
+                        Fore.WHITE + Style.DIM
+                    )
             else:
                 if self.verbose:
-                    on_print("No relevant memories found for the user query.", Fore.WHITE + Style.DIM)
+                    plugins.on_print(
+                        "No relevant memories found for the user query.", Fore.WHITE + Style.DIM
+                    )
                 system_prompt_entry['content'] = original_system_prompt
         else:
             # If no system prompt exists, raise an exception (or create one, depending on desired behavior)
             raise ValueError("No system prompt found in the conversation")
+
+
+    def reset_memory(self, *,  ctx:Context):
+            """
+            Interactively resets the memory collection by deleting every document if contains.
+            """
+
+            #load_chroma_client(ctx=ctx)
+
+            if not ctx.chroma_client:
+                return
+
+            # Ask for user confirmation before resetting
+            confirmation = plugins.on_user_input(f"Are you sure you want to reset the collection '{self.collection_name}'? (y/n): ").lower()
+
+            if confirmation not in ('y', 'yes'):
+                plugins.on_print("Collection reset canceled.", Fore.YELLOW)
+                return
+
+            try:
+                if self.collection:
+                    self.collection.delete(ids=self.collection.get(include=[])["ids"])
+                #self.client.delete_collection(name=self.collection_name)
+                #self.collection = self.client.get_or_create_collection(name=self.collection_name)
+                plugins.on_print(f"Collection {self.collection_name} reset.", Fore.GREEN)
+            except Exception as e:
+                plugins.on_print(f"Collection {self.collection_name} not found: {e}.", Fore.RED)
+
+
+
+    def retrieve_relevant_memory(self, query_text, top_k=3, answer_distance_threshold=200):
+        """
+        Retrieve the most relevant memories based on the given query.
+
+        :param query_text: The query or question for which relevant memories should be retrieved.
+        :param top_k: Number of relevant memories to retrieve.
+        :return: A list of the top-k most relevant memories.
+        """
+        if self.verbose:
+            plugins.on_print(f"Retrieving relevant memories for query: {query_text}", Fore.WHITE + Style.DIM)
+
+        # Generate an embedding for the query
+        query_embedding = self.generate_embedding(query_text)
+
+        if query_embedding is None:
+            return [], []
+
+        # Query the memory collection for relevant memories
+        results = self.collection.query(
+            query_embeddings=[query_embedding],
+            n_results=top_k
+        )
+
+        documents = results["documents"][0]
+        distances = results["distances"][0]
+        metadatas = results["metadatas"][0]
+
+        # Filter the results based on the answer distance threshold
+        filtered_results = {
+            'documents': [],
+            'metadatas': []
+        }
+        for metadata, answer_distance, document in zip(metadatas, distances, documents):
+            if answer_distance > answer_distance_threshold > 0:
+
+                if self.verbose:
+                    plugins.on_print(f"Answer distance: {answer_distance} > {answer_distance_threshold}. Skipping memory.", Fore.WHITE + Style.DIM)
+                continue
+
+            if self.verbose:
+                plugins.on_print(f"Answer distance: {answer_distance}", Fore.WHITE + Style.DIM)
+                plugins.on_print(f"Memory: {document}", Fore.WHITE + Style.DIM)
+                plugins.on_print(f"Metadata: {metadata}", Fore.WHITE + Style.DIM)
+
+            filtered_results['documents'].append(document)
+            filtered_results['metadatas'].append(metadata)
+
+        return filtered_results['documents'], filtered_results['metadatas']

@@ -6,17 +6,26 @@ import sys
 from colorama import Fore, Style
 from ddgs import DDGS
 
-from ollama_chat.core import utils
+#from ollama_chat.core import utils
 from ollama_chat.core.ollama import ask_ollama
 from ollama_chat.core.document_indexer import DocumentIndexer
 from ollama_chat.core.simple_web_crawler import SimpleWebCrawler
 from ollama_chat.core import plugins
 from ollama_chat.core.context import Context
 from ollama_chat.core.query_vector_database import query_vector_database
-from ollama_chat.core.query_vector_database import load_chroma_client
+#from ollama_chat.core.query_vector_database import load_chroma_client
 
 
-def web_search(query=None, n_results=5, region="wt-wt", web_embedding_model=None, num_ctx=None, return_intermediate=False,  *, ctx:Context):
+def web_search(
+    query=None,
+    n_results=5,
+    region="wt-wt",
+    web_embedding_model=None,
+    num_ctx=None,
+    return_intermediate=False,
+    *,
+    ctx:Context
+):
 
     if web_embedding_model is None:
         web_embedding_model = ctx.embeddings_model
@@ -29,7 +38,7 @@ def web_search(query=None, n_results=5, region="wt-wt", web_embedding_model=None
         return ""
 
     # Initialize ChromaDB client if not already initialized
-    load_chroma_client(ctx=ctx)
+    #load_chroma_client(ctx=ctx)
 
     if not ctx.chroma_client:
         error_msg = "Web search requires ChromaDB to be running. Please start ChromaDB server or configure a persistent database path."
@@ -75,7 +84,7 @@ def web_search(query=None, n_results=5, region="wt-wt", web_embedding_model=None
             if quality_check:
                 skip_web_crawl = True
                 if ctx.verbose:
-                    utils.on_print(f"Cache hit: Found {num_quality_results} quality results (avg BM25: {avg_bm25:.4f}, avg hybrid: {avg_hybrid:.4f}). Skipping web crawl.", Fore.GREEN + Style.DIM)
+                    plugins.on_print(f"Cache hit: Found {num_quality_results} quality results (avg BM25: {avg_bm25:.4f}, avg hybrid: {avg_hybrid:.4f}). Skipping web crawl.", Fore.GREEN + Style.DIM)
             else:
                 if ctx.verbose:
                     reason = []
@@ -83,11 +92,11 @@ def web_search(query=None, n_results=5, region="wt-wt", web_embedding_model=None
                         reason.append(f"only {num_quality_results}/{ctx.min_quality_results_threshold} results")
                     if avg_bm25 < ctx.min_average_bm25_threshold:
                         reason.append(f"low BM25 {avg_bm25:.4f} < {ctx.min_average_bm25_threshold}")
-                    utils.on_print(f"Cache insufficient: {', '.join(reason)}. Performing web crawl.", Fore.YELLOW + Style.DIM)
+                    plugins.on_print(f"Cache insufficient: {', '.join(reason)}. Performing web crawl.", Fore.YELLOW + Style.DIM)
 
     except Exception as e:
         if ctx.verbose:
-            utils.on_print(f"Cache check failed: {str(e)}. Proceeding with web crawl.", Fore.YELLOW + Style.DIM)
+            plugins.on_print(f"Cache check failed: {str(e)}. Proceeding with web crawl.", Fore.YELLOW + Style.DIM)
         skip_web_crawl = False
 
     # If we have enough quality results from cache, return them
@@ -120,14 +129,14 @@ def web_search(query=None, n_results=5, region="wt-wt", web_embedding_model=None
         pass
 
     if ctx.verbose:
-        utils.on_print("Web Search Results:", Fore.WHITE + Style.DIM)
-        utils.on_print(urls, Fore.WHITE + Style.DIM)
+        plugins.on_print("Web Search Results:", Fore.WHITE + Style.DIM)
+        plugins.on_print(urls, Fore.WHITE + Style.DIM)
 
     if len(urls) == 0:
         # If no new URLs found, return cache results if available
         if cache_check_results:
             if ctx.verbose:
-                utils.on_print("No new search results found. Returning cache results.", Fore.YELLOW + Style.DIM)
+                plugins.on_print("No new search results found. Returning cache results.", Fore.YELLOW + Style.DIM)
             if return_intermediate:
                 intermediate_data = {
                     'cache_hit': True,
@@ -201,8 +210,16 @@ def web_search(query=None, n_results=5, region="wt-wt", web_embedding_model=None
         )
         if new_query:
             if ctx.verbose:
-                utils.on_print(f"Refined search query: {new_query}", Fore.WHITE + Style.DIM)
-            return web_search(new_query, n_results, region, web_cache_collection, web_embedding_model, num_ctx, return_intermediate, ctx=ctx)
+                plugins.on_print(f"Refined search query: {new_query}", Fore.WHITE + Style.DIM)
+            return web_search(
+                new_query,
+                n_results,
+                region,
+                web_embedding_model,
+                num_ctx,
+                return_intermediate,
+                ctx=ctx
+            )
 
     # Return intermediate results if requested
     if return_intermediate:
@@ -219,27 +236,27 @@ def web_search(query=None, n_results=5, region="wt-wt", web_embedding_model=None
     return results
 
 
-# TODO: Understand divverence with web_search and rename appropriately
+# TODO: Understand difference with web_search and rename appropriately
 def web_search2( *,  show_intermediate:bool, num_ctx, ctx:Context):
 
     if ctx.verbose:
-        utils.on_print(f"Performing web search for: {ctx.web_search}", Fore.WHITE + Style.DIM)
-        utils.on_print(f"Number of results: {ctx.web_search_results}", Fore.WHITE + Style.DIM)
-        utils.on_print(f"Region: {ctx.web_search_region}", Fore.WHITE + Style.DIM)
-        utils.on_print(f"Show intermediate results: {show_intermediate}", Fore.WHITE + Style.DIM)
+        plugins.on_print(f"Performing web search for: {ctx.web_search}", Fore.WHITE + Style.DIM)
+        plugins.on_print(f"Number of results: {ctx.web_search_results}", Fore.WHITE + Style.DIM)
+        plugins.on_print(f"Region: {ctx.web_search_region}", Fore.WHITE + Style.DIM)
+        plugins.on_print(f"Show intermediate results: {show_intermediate}", Fore.WHITE + Style.DIM)
 
     # Ensure ChromaDB is loaded for web search caching
-    load_chroma_client(ctx=ctx)
+    #load_chroma_client(ctx=ctx)
 
     if not ctx.chroma_client:
-        utils.on_print("Web search requires ChromaDB to be running. Please start ChromaDB server or configure a persistent database path.", Fore.RED)
+        plugins.on_print("Web search requires ChromaDB to be running. Please start ChromaDB server or configure a persistent database path.", Fore.RED)
         sys.exit(1)
 
     # Perform the web search
     if show_intermediate:
-        utils.on_print("\n" + "="*80, Fore.MAGENTA)
-        utils.on_print("SEARCHING THE WEB, QUERY: " + ctx.web_search, Fore.MAGENTA + Style.BRIGHT)
-        utils.on_print("="*80, Fore.MAGENTA)
+        plugins.on_print("\n" + "="*80, Fore.MAGENTA)
+        plugins.on_print("SEARCHING THE WEB, QUERY: " + ctx.web_search, Fore.MAGENTA + Style.BRIGHT)
+        plugins.on_print("="*80, Fore.MAGENTA)
 
         web_search_response, intermediate_data = web_search(
             ctx.web_search,
@@ -253,49 +270,49 @@ def web_search2( *,  show_intermediate:bool, num_ctx, ctx:Context):
 
         # Display intermediate results
         if intermediate_data:
-            utils.on_print("\n" + "="*80, Fore.MAGENTA)
-            utils.on_print("INTERMEDIATE RESULTS", Fore.MAGENTA + Style.BRIGHT)
-            utils.on_print("="*80, Fore.MAGENTA)
+            plugins.on_print("\n" + "="*80, Fore.MAGENTA)
+            plugins.on_print("INTERMEDIATE RESULTS", Fore.MAGENTA + Style.BRIGHT)
+            plugins.on_print("="*80, Fore.MAGENTA)
 
             # Show search results
             if 'search_results' in intermediate_data and intermediate_data['search_results']:
-                utils.on_print("\n" + "-"*80, Fore.MAGENTA)
-                utils.on_print("1. SEARCH RESULTS FROM DUCKDUCKGO", Fore.MAGENTA + Style.BRIGHT)
-                utils.on_print("-"*80, Fore.MAGENTA)
+                plugins.on_print("\n" + "-"*80, Fore.MAGENTA)
+                plugins.on_print("1. SEARCH RESULTS FROM DUCKDUCKGO", Fore.MAGENTA + Style.BRIGHT)
+                plugins.on_print("-"*80, Fore.MAGENTA)
                 for i, result in enumerate(intermediate_data['search_results'], 1):
-                    utils.on_print(f"\n{i}. {result.get('title', 'N/A')}", Fore.CYAN + Style.BRIGHT)
-                    utils.on_print(f"   URL: {result.get('href', 'N/A')}", Fore.CYAN)
-                    utils.on_print(f"   Snippet: {result.get('body', 'N/A')}", Fore.WHITE)
+                    plugins.on_print(f"\n{i}. {result.get('title', 'N/A')}", Fore.CYAN + Style.BRIGHT)
+                    plugins.on_print(f"   URL: {result.get('href', 'N/A')}", Fore.CYAN)
+                    plugins.on_print(f"   Snippet: {result.get('body', 'N/A')}", Fore.WHITE)
 
             # Show URLs being crawled
             if 'urls' in intermediate_data and intermediate_data['urls']:
-                utils.on_print("\n" + "-"*80, Fore.MAGENTA)
-                utils.on_print("2. URLS BEING CRAWLED", Fore.MAGENTA + Style.BRIGHT)
-                utils.on_print("-"*80, Fore.MAGENTA)
+                plugins.on_print("\n" + "-"*80, Fore.MAGENTA)
+                plugins.on_print("2. URLS BEING CRAWLED", Fore.MAGENTA + Style.BRIGHT)
+                plugins.on_print("-"*80, Fore.MAGENTA)
                 for i, url in enumerate(intermediate_data['urls'], 1):
-                    utils.on_print(f"   {i}. {url}", Fore.CYAN)
+                    plugins.on_print(f"   {i}. {url}", Fore.CYAN)
 
             # Show crawled articles
             if 'articles' in intermediate_data and intermediate_data['articles']:
-                utils.on_print("\n" + "-"*80, Fore.MAGENTA)
-                utils.on_print("3. CRAWLED CONTENT", Fore.MAGENTA + Style.BRIGHT)
-                utils.on_print("-"*80, Fore.MAGENTA)
+                plugins.on_print("\n" + "-"*80, Fore.MAGENTA)
+                plugins.on_print("3. CRAWLED CONTENT", Fore.MAGENTA + Style.BRIGHT)
+                plugins.on_print("-"*80, Fore.MAGENTA)
                 for i, article in enumerate(intermediate_data['articles'], 1):
-                    utils.on_print(f"\n{i}. URL: {article.get('url', 'N/A')}", Fore.CYAN + Style.BRIGHT)
+                    plugins.on_print(f"\n{i}. URL: {article.get('url', 'N/A')}", Fore.CYAN + Style.BRIGHT)
                     content = article.get('text', '')
                     # Show first 500 characters of each article
                     preview = content[:500] + "..." if len(content) > 500 else content
-                    utils.on_print(f"   Content preview: {preview}", Fore.WHITE)
-                    utils.on_print(f"   Total length: {len(content)} characters", Fore.YELLOW)
+                    plugins.on_print(f"   Content preview: {preview}", Fore.WHITE)
+                    plugins.on_print(f"   Total length: {len(content)} characters", Fore.YELLOW)
 
             # Show vector DB results
             if 'vector_db_results' in intermediate_data:
-                utils.on_print("\n" + "-"*80, Fore.MAGENTA)
-                utils.on_print("4. VECTOR DATABASE RETRIEVAL RESULTS", Fore.MAGENTA + Style.BRIGHT)
-                utils.on_print("-"*80, Fore.MAGENTA)
-                utils.on_print(intermediate_data['vector_db_results'], Fore.WHITE)
+                plugins.on_print("\n" + "-"*80, Fore.MAGENTA)
+                plugins.on_print("4. VECTOR DATABASE RETRIEVAL RESULTS", Fore.MAGENTA + Style.BRIGHT)
+                plugins.on_print("-"*80, Fore.MAGENTA)
+                plugins.on_print(intermediate_data['vector_db_results'], Fore.WHITE)
 
-            utils.on_print("\n" + "="*80, Fore.MAGENTA)
+            plugins.on_print("\n" + "="*80, Fore.MAGENTA)
     else:
         web_search_response = web_search(
             ctx.web_search,
@@ -315,20 +332,20 @@ def web_search2( *,  show_intermediate:bool, num_ctx, ctx:Context):
         web_search_prompt += "Cite some useful links from the search results to support your answer."
 
         if ctx.verbose:
-            utils.on_print("\n" + "="*80, Fore.CYAN)
-            utils.on_print("WEB SEARCH CONTEXT", Fore.CYAN + Style.BRIGHT)
-            utils.on_print("="*80, Fore.CYAN)
-            utils.on_print(web_search_response, Fore.WHITE + Style.DIM)
-            utils.on_print("="*80, Fore.CYAN)
+            plugins.on_print("\n" + "="*80, Fore.CYAN)
+            plugins.on_print("WEB SEARCH CONTEXT", Fore.CYAN + Style.BRIGHT)
+            plugins.on_print("="*80, Fore.CYAN)
+            plugins.on_print(web_search_response, Fore.WHITE + Style.DIM)
+            plugins.on_print("="*80, Fore.CYAN)
 
         # Use the current model (already initialized)
         if ctx.verbose:
-            utils.on_print(f"Using model: {ctx.current_model}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Using model: {ctx.current_model}", Fore.WHITE + Style.DIM)
 
         # Get answer from the model
-        utils.on_print("\n" + "="*80, Fore.GREEN)
-        utils.on_print("ANSWER", Fore.GREEN + Style.BRIGHT)
-        utils.on_print("="*80, Fore.GREEN)
+        plugins.on_print("\n" + "="*80, Fore.GREEN)
+        plugins.on_print("ANSWER", Fore.GREEN + Style.BRIGHT)
+        plugins.on_print("="*80, Fore.GREEN)
 
         answer = ask_ollama(
             "",
@@ -343,8 +360,8 @@ def web_search2( *,  show_intermediate:bool, num_ctx, ctx:Context):
 
         if answer:
             if not ctx.stream:
-                utils.on_print(answer)
-            utils.on_print("\n" + "="*80, Fore.GREEN)
+                plugins.on_print(answer)
+            plugins.on_print("\n" + "="*80, Fore.GREEN)
 
             # Save to output file if specified
             if ctx.output:
@@ -352,8 +369,8 @@ def web_search2( *,  show_intermediate:bool, num_ctx, ctx:Context):
                     f.write(f"Query: {ctx.web_search}\n\n")
                     f.write(f"Context:\n{web_search_response}\n\n")
                     f.write(f"Answer:\n{answer}\n")
-                utils.on_print(f"\nResults saved to: {ctx.output}", Fore.GREEN)
+                plugins.on_print(f"\nResults saved to: {ctx.output}", Fore.GREEN)
         else:
-            utils.on_print("No answer generated.", Fore.YELLOW)
+            plugins.on_print("No answer generated.", Fore.YELLOW)
     else:
-        utils.on_print("No web search results found.", Fore.YELLOW)
+        plugins.on_print("No web search results found.", Fore.YELLOW)

@@ -1,5 +1,10 @@
+import os
 import argparse
 
+import chromadb
+from colorama import Fore, Style
+
+from ollama_chat.core import plugins
 from ollama_chat.core import run
 from ollama_chat.core.context import Context
 
@@ -9,12 +14,31 @@ def main():
     number_of_documents_to_return_from_vector_db = 8
 
     parser = argparse.ArgumentParser(description='Run the Ollama chatbot.')
-    # TODO: Compare store_true and argparse.BooleanOptionalAction, the first seems the better and may replace the second everywhere here
-    parser.add_argument('--list-tools', action='store_true', help='List available tools and exit')
-    parser.add_argument('--list-collections', action='store_true', help='List available ChromaDB collections and exit')
+
+    # Memory
+    parser.add_argument('--memory', type=bool, help='Use memory manager for context management', default=False, action=argparse.BooleanOptionalAction)
+
+    # Conversation memory
+    parser.add_argument('--memory-collection-name', type=str, help="Name of the memory collection to use for context management", default=memory_collection_name)
+
+    # Long-term memory
+    parser.add_argument('--long-term-memory-file', type=str, help="Long-term memory file name", default=long_term_memory_file)
+
+    # Vectior database
+    # it is used for conversation memory and web cache
     parser.add_argument('--chroma-path', type=str, help='ChromaDB database path', default=None)
     parser.add_argument('--chroma-host', type=str, help='ChromaDB client host', default="localhost")
     parser.add_argument('--chroma-port', type=int, help='ChromaDB client port', default=8000)
+
+    # Models
+    parser.add_argument('--model', type=str, help='Preferred Ollama model', default=None)
+    parser.add_argument('--thinking-model', type=str, help='Alternate model to use for more thoughtful responses, like OpenAI o1 or o3 models', default=None)
+    parser.add_argument('--embeddings-model', type=str, help='Sentence embeddings model to use for vector database queries', default=None)
+
+    parser.add_argument('--verbose', type=bool, help='Enable verbose mode', default=False, action=argparse.BooleanOptionalAction)
+    # TODO: Compare store_true and argparse.BooleanOptionalAction, the first seems the better and may replace the second everywhere here
+    parser.add_argument('--list-tools', action='store_true', help='List available tools and exit')
+    parser.add_argument('--list-collections', action='store_true', help='List available ChromaDB collections and exit')
     parser.add_argument('--docs-to-fetch-from-chroma', type=int, help="Number of documents to return from the vector database when querying for similar documents", default=number_of_documents_to_return_from_vector_db)
     parser.add_argument('--collection', type=str, help='ChromaDB collection name', default=None)
     parser.add_argument('--use-openai', type=bool, help='Use OpenAI API or Llama-CPP', default=False, action=argparse.BooleanOptionalAction)
@@ -24,13 +48,9 @@ def main():
     parser.add_argument('--prompt-template', type=str, help='Prompt template to use for Llama-CPP', default=None)
     parser.add_argument('--additional-chatbots', type=str, help='Path to a JSON file containing additional chatbots', default=None)
     parser.add_argument('--chatbot', type=str, help='Preferred chatbot personality', default=None)
-    parser.add_argument('--verbose', type=bool, help='Enable verbose mode', default=False, action=argparse.BooleanOptionalAction)
-    parser.add_argument('--embeddings-model', type=str, help='Sentence embeddings model to use for vector database queries', default=None)
     parser.add_argument('--system-prompt', type=str, help='System prompt message', default=None)
     parser.add_argument('--system-prompt-placeholders-json', type=str, help='A JSON file containing a dictionary of key-value pairs to fill system prompt placeholders', default=None)
     parser.add_argument('--prompt', type=str, help='User prompt message', default=None)
-    parser.add_argument('--model', type=str, help='Preferred Ollama model', default=None)
-    parser.add_argument('--thinking-model', type=str, help='Alternate model to use for more thoughtful responses, like OpenAI o1 or o3 models', default=None)
     parser.add_argument('--thinking-model-reasoning-pattern', type=str, help='Reasoning pattern used by the thinking model', default=None)
     parser.add_argument('--conversations-folder', type=str, help='Folder to save conversations to', default=None)
     parser.add_argument('--auto-save', type=bool, help='Automatically save conversations to a file at the end of the chat', default=False, action=argparse.BooleanOptionalAction)
@@ -57,14 +77,11 @@ def main():
     parser.add_argument('--listening-port', type=int, help=f"Listening port for the current {__name__} instance", default=8000)
     parser.add_argument('--user-name', type=str, help='User name', default=None)
     parser.add_argument('--anonymous', type=bool, help='Do not use the user name from the environment variables', default=False, action=argparse.BooleanOptionalAction)
-    # TODO: memory seems of the wrong type for the default value
-    parser.add_argument('--memory', type=str, help='Use memory manager for context management', default=False, action=argparse.BooleanOptionalAction)
-    # TODO: verify if the default value is really 204 tokens, since here it is None
+
+    # TODO: verify if the default value is really 2048 tokens as the help says, since here it is None
     parser.add_argument('--context-window', type=int, help='Ollama context window size, if not specified, the default value is used, which is 2048 tokens', default=None)
     parser.add_argument('--auto-start', type=bool, help="Start the conversation automatically", default=False, action=argparse.BooleanOptionalAction)
     parser.add_argument('--tools', type=str, help="List of tools to activate and use in the conversation, separated by commas", default=None)
-    parser.add_argument('--memory-collection-name', type=str, help="Name of the memory collection to use for context management", default=memory_collection_name)
-    parser.add_argument('--long-term-memory-file', type=str, help="Long-term memory file name", default=long_term_memory_file)
     parser.add_argument('--disable-plugins', type=bool, help='Disable external plugins to speed up execution (plugins will still be loaded if required by requested tools)', default=False, action=argparse.BooleanOptionalAction)
 
     # Agent instantiation arguments
@@ -84,20 +101,29 @@ def main():
     args = parser.parse_args()
 
     ctx = Context(
-        verbose = args.verbose,
+
+        # Memory
+        use_memory_manager = args.memory,
+
+        # Conversation memory
         memory_collection_name = args.memory_collection_name,
+
+        # Long-term memory
         long_term_memory_file =  args.long_term_memory_file,
+
+        # Models
+        model = args.model,
+        thinking_model = args.thinking_model,
+        embeddings_model = args.embeddings_model,
+
+        verbose = args.verbose,
         number_of_documents_to_return_from_vector_db = args.docs_to_fetch_from_chroma,
         no_system_role = args.disable_system_role,
         use_openai = args.use_openai,
         use_azure_openai = args.use_azure_openai,
         syntax_highlighting = args.syntax_highlighting,
         think_mode_on = False,
-        alternate_model = None,
         interactive_mode = args.interactive,
-        chroma_client_host = args.chroma_host,
-        chroma_client_port = args.chroma_port,
-        chroma_db_path = args.chroma_path,
         plugins_folder = args.plugins_folder,
         preferred_collection_name = args.collection,
         temperature = args.temperature,
@@ -116,18 +142,14 @@ def main():
         extract_end = args.extract_end,
         auto_start = args.auto_start,
         auto_save = args.auto_save,
-        embeddings_model = args.embeddings_model,
         prompt = args.prompt,
         stream = args.stream,
         output = args.output,
         other_instance_url = args.other_instance_url,
-        model = args.model,
-        thinking_model = args.thinking_model,
         thinking_model_reasoning_pattern = args.thinking_model_reasoning_pattern,
         listening_port = args.listening_port,
         user_name = args.user_name,
         anonymous = args.anonymous,
-        memory = args.memory,
         context_window = args.context_window,
         chatbot = args.chatbot,
         full_docs_db = args.full_docs_db,
@@ -140,7 +162,6 @@ def main():
         tools = args.tools,
         list_tools = args.list_tools,
         list_collections = args.list_collections,
-
         instantiate_agent = args.instantiate_agent,
         agent_task = args.agent_task,
         agent_system_prompt = args.agent_system_prompt,
@@ -184,13 +205,37 @@ def main():
                 "system_prompt": "CONTEXT: We are going to create one of the best ChatGPT prompts ever written. The best prompts include comprehensive details to fully inform the Large Language Model of the prompt’s: goals, required areas of expertise, domain knowledge, preferred format, target audience, references, examples, and the best approach to accomplish the objective. Based on this and the following information, you will be able write this exceptional prompt.\r\n\r\nROLE: You are an LLM prompt generation expert. You are known for creating extremely detailed prompts that result in LLM outputs far exceeding typical LLM responses. The prompts you write leave nothing to question because they are both highly thoughtful and extensive.\r\n\r\nACTION:\r\n\r\n1) Before you begin writing this prompt, you will first look to receive the prompt topic or theme. If I don’t provide the topic or theme for you, please request it.\r\n2) Once you are clear about the topic or theme, please also review the Format and Example provided below.\r\n3) If necessary, the prompt should include “fill in the blank” elements for the user to populate based on their needs.\r\n4) Take a deep breath and take it one step at a time.\r\n5) Once you’ve ingested all of the information, write the best prompt ever created.\r\n\r\nFORMAT: For organizational purposes, you will use an acronym called “C.R.A.F.T.” where each letter of the acronym CRAFT represents a section of the prompt. Your format and section descriptions for this prompt development are as follows:\r\n\r\nContext: This section describes the current context that outlines the situation for which the prompt is needed. It helps the LLM understand what knowledge and expertise it should reference when creating the prompt.\r\n\r\nRole: This section defines the type of experience the LLM has, its skill set, and its level of expertise relative to the prompt requested. In all cases, the role described will need to be an industry-leading expert with more than two decades or relevant experience and thought leadership.\r\n\r\nAction: This is the action that the prompt will ask the LLM to take. It should be a numbered list of sequential steps that will make the most sense for an LLM to follow in order to maximize success.\r\n\r\nFormat: This refers to the structural arrangement or presentation style of the LLM’s generated content. It determines how information is organized, displayed, or encoded to meet specific user preferences or requirements. Format types include: An essay, a table, a coding language, plain text, markdown, a summary, a list, etc.\r\n\r\nTarget Audience: This will be the ultimate consumer of the output that your prompt creates. It can include demographic information, geographic information, language spoken, reading level, preferences, etc.\r\n\r\nTARGET AUDIENCE: The target audience for this prompt creation is ChatGPT 4o or ChatGPT o1.\r\n\r\nEXAMPLE: Here is an Example of a CRAFT Prompt for your reference:\r\n\r\n**Context:** You are tasked with creating a detailed guide to help individuals set, track, and achieve monthly goals. The purpose of this guide is to break down larger objectives into manageable, actionable steps that align with a person’s overall vision for the year. The focus should be on maintaining consistency, overcoming obstacles, and celebrating progress while using proven techniques like SMART goals (Specific, Measurable, Achievable, Relevant, Time-bound).\r\n\r\n**Role:** You are an expert productivity coach with over two decades of experience in helping individuals optimize their time, define clear goals, and achieve sustained success. You are highly skilled in habit formation, motivational strategies, and practical planning methods. Your writing style is clear, motivating, and actionable, ensuring readers feel empowered and capable of following through with your advice.\r\n\r\n**Action:** 1. Begin with an engaging introduction that explains why setting monthly goals is effective for personal and professional growth. Highlight the benefits of short-term goal planning. 2. Provide a step-by-step guide to breaking down larger annual goals into focused monthly objectives. 3. Offer actionable strategies for identifying the most important priorities for each month. 4. Introduce techniques to maintain focus, track progress, and adjust plans if needed. 5. Include examples of monthly goals for common areas of life (e.g., health, career, finances, personal development). 6. Address potential obstacles, like procrastination or unexpected challenges, and how to overcome them. 7. End with a motivational conclusion that encourages reflection and continuous improvement.\r\n\r\n**Format:** Write the guide in plain text, using clear headings and subheadings for each section. Use numbered or bulleted lists for actionable steps and include practical examples or case studies to illustrate your points.\r\n\r\n**Target Audience:** The target audience includes working professionals and entrepreneurs aged 25-55 who are seeking practical, straightforward strategies to improve their productivity and achieve their goals. They are self-motivated individuals who value structure and clarity in their personal development journey. They prefer reading at a 6th grade level.\r\n\r\n-End example-\r\n\r\nPlease reference the example I have just provided for your output. Again, take a deep breath and take it one step at a time."
             }
         ],
-
-        #openai_client = None,
-
-        #debug=args.debug,
-        #dry_run=args.dry_run,
     )
+
+    # Vectior database
+    load_chroma_client(host=args.chroma_host, port=args.chroma_port, path=args.chroma_path, ctx=ctx)
     run(ctx=ctx)
 
 if __name__ == "__main__":
     main()
+
+
+def load_chroma_client(*, host:str=None, port:int=None, path:str=None, ctx:Context):
+    """
+    Initializes the Chroma client if it is not already initialized.
+    Can be specified a host and port or a path to a folder. If the folder does not exists it is
+    created and a new database will be initialized inside it.
+    """
+    if ctx.chroma_client:
+        return
+
+    # Initialize the ChromaDB client
+    try:
+        if path:
+            # Set environment variable ANONYMIZED_TELEMETRY to disable telemetry
+            os.environ["ANONYMIZED_TELEMETRY"] = "0"
+            ctx.chroma_client = chromadb.PersistentClient(path=path)
+            plugins.on_print("Local ChromaDB client initialized.", Fore.WHITE + Style.DIM)
+        elif host and 0 < port:
+            ctx.chroma_client = chromadb.HttpClient(host=host, port=port)
+        else:
+            raise ValueError("Invalid Chroma client configuration")
+    except:
+        if ctx.verbose:
+            plugins.on_print("ChromaDB client could not be initialized. Please check the host and port or provide a chroma_path.", Fore.RED + Style.DIM)
+        ctx.chroma_client = None

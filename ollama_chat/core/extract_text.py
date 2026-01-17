@@ -10,7 +10,7 @@ from lxml import etree
 from bs4 import BeautifulSoup
 from markdownify import MarkdownConverter
 
-from ollama_chat.core import utils
+from ollama_chat.core import plugins
 
 def extract_text_from_pdf(pdf_content):
     with open('temp.pdf', 'wb') as f:
@@ -215,7 +215,7 @@ def extract_text_from_html(html_content):
 
         return text
     except Exception as e:
-        utils.on_print(f"Failed to parse HTML content: {e}", Fore.RED)
+        plugins.on_print(f"Failed to parse HTML content: {e}", Fore.RED)
         return ""
 
 def md(soup, **options):

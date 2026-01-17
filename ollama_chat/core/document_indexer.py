@@ -8,9 +8,9 @@ import ollama
 from tqdm import tqdm
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from ollama_chat.core.utils import on_print
+from ollama_chat.core import plugins
 from ollama_chat.core.ollama import ask_ollama
-from ollama_chat.core.utils import on_user_input
+#from ollama_chat.core.utils import on_user_input
 from ollama_chat.core.markdown_splitter import MarkdownSplitter
 from ollama_chat.core.extract_text import extract_text_from_html
 from ollama_chat.core.context import Context
@@ -37,14 +37,14 @@ class DocumentIndexer:
         self.verbose = verbose
 
         if verbose:
-            on_print(f"DocumentIndexer initialized with embedding model: {self.model}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"DocumentIndexer initialized with embedding model: {self.model}", Fore.WHITE + Style.DIM)
             if self.summary_model:
-                on_print(f"Using summary model: {self.summary_model}", Fore.WHITE + Style.DIM)
-            on_print(f"Using collection: {self.collection.name}", Fore.WHITE + Style.DIM)
-            on_print(f"Verbose mode is {'on' if self.verbose else 'off'}", Fore.WHITE + Style.DIM)
-            on_print(f"Using embeddings model: {self.model}", Fore.WHITE + Style.DIM)
+                plugins.on_print(f"Using summary model: {self.summary_model}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Using collection: {self.collection.name}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Verbose mode is {'on' if self.verbose else 'off'}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Using embeddings model: {self.model}", Fore.WHITE + Style.DIM)
             if self.full_doc_store:
-                on_print(f"Full document store enabled at: {self.full_doc_store.db_path}", Fore.WHITE + Style.DIM)
+                plugins.on_print(f"Full document store enabled at: {self.full_doc_store.db_path}", Fore.WHITE + Style.DIM)
 
     def _prepare_text_for_embedding(self, text, num_ctx=None):
         """
@@ -69,13 +69,13 @@ class DocumentIndexer:
 
             if len(text) > max_chars:
                 if self.verbose:
-                    on_print(f"Truncating text for embedding: original {len(text)} chars > {max_chars} chars (tokens={max_tokens})", Fore.YELLOW)
+                    plugins.on_print(f"Truncating text for embedding: original {len(text)} chars > {max_chars} chars (tokens={max_tokens})", Fore.YELLOW)
                 return text[:max_chars]
             return text
         except Exception as e:
             # In case of unexpected errors, fall back to original text (do not modify stored docs)
             if self.verbose:
-                on_print(f"Error while preparing text for embedding: {e}. Using original text.", Fore.YELLOW)
+                plugins.on_print(f"Error while preparing text for embedding: {e}. Using original text.", Fore.YELLOW)
             return text
 
     def get_text_files(self):
@@ -86,7 +86,7 @@ class DocumentIndexer:
         """
         text_files = []
         # for root, dirs, files in os.walk(self.root_folder):
-        for root, files in os.walk(self.root_folder):
+        for root, _, files in os.walk(self.root_folder):
             for file in files:
                 # Check for files with extension
                 if file.endswith(".txt") or file.endswith(".md") or file.endswith(".tex"):
@@ -123,7 +123,10 @@ class DocumentIndexer:
         start_index = content.find(start_string)
         if start_index == -1:
             if self.verbose:
-                on_print(f"Start string '{start_string}' not found, using full content", Fore.YELLOW)
+                plugins.on_print(
+                    f"Start string '{start_string}' not found, using full content",
+                    Fore.YELLOW
+                )
             return content
 
         # Move past the start string
@@ -132,13 +135,19 @@ class DocumentIndexer:
         end_index = content.find(end_string, start_index)
         if end_index == -1:
             if self.verbose:
-                on_print(f"End string '{end_string}' not found after start string, using content from start string to end", Fore.YELLOW)
+                plugins.on_print(
+                    f"End string '{end_string}' not found after start string, using content from start string to end",
+                    Fore.YELLOW
+                )
             return content[start_index:]
 
         extracted_text = content[start_index:end_index]
 
         if self.verbose:
-            on_print(f"Extracted {len(extracted_text)} characters between '{start_string}' and '{end_string}'", Fore.WHITE + Style.DIM)
+            plugins.on_print(
+                f"Extracted {len(extracted_text)} characters between '{start_string}' and '{end_string}'",
+                Fore.WHITE + Style.DIM
+            )
 
         return extracted_text
 
@@ -170,26 +179,26 @@ class DocumentIndexer:
         """
         # Ask the user to confirm if they want to allow chunking of large documents
         if allow_chunks and not no_chunking_confirmation:
-            on_print("Large documents will be chunked into smaller pieces for indexing.")
-            allow_chunks = on_user_input("Do you want to continue with chunking (if you answer 'no', large documents will be indexed as a whole)? [y/n]: ").lower() in ['y', 'yes']
+            plugins.on_print("Large documents will be chunked into smaller pieces for indexing.")
+            allow_chunks = plugins.on_user_input("Do you want to continue with chunking (if you answer 'no', large documents will be indexed as a whole)? [y/n]: ").lower() in ['y', 'yes']
 
         # Ask the user for extraction strings if not provided
         # Skip asking if no_chunking_confirmation is True (automated indexing)
         if extract_start is None and extract_end is None and not no_chunking_confirmation:
-            on_print("\nOptional: You can extract only a specific part of each document for embedding computation.")
-            on_print("This allows you to focus on relevant sections while still storing the full document.")
-            use_extraction = on_user_input("Do you want to extract specific text sections for embedding? [y/n]: ").lower() in ['y', 'yes']
+            plugins.on_print("\nOptional: You can extract only a specific part of each document for embedding computation.")
+            plugins.on_print("This allows you to focus on relevant sections while still storing the full document.")
+            use_extraction = plugins.on_user_input("Do you want to extract specific text sections for embedding? [y/n]: ").lower() in ['y', 'yes']
 
             if use_extraction:
-                extract_start = on_user_input("Enter the start string (text that marks the beginning of the section): ").strip()
-                extract_end = on_user_input("Enter the end string (text that marks the end of the section): ").strip()
+                extract_start = plugins.on_user_input("Enter the start string (text that marks the beginning of the section): ").strip()
+                extract_end = plugins.on_user_input("Enter the end string (text that marks the end of the section): ").strip()
 
                 if not extract_start or not extract_end:
-                    on_print("Warning: Empty start or end string provided. Text extraction will be disabled.", Fore.YELLOW)
+                    plugins.on_print("Warning: Empty start or end string provided. Text extraction will be disabled.", Fore.YELLOW)
                     extract_start = None
                     extract_end = None
                 else:
-                    on_print(f"Text extraction enabled: extracting content between '{extract_start}' and '{extract_end}'", Fore.GREEN)
+                    plugins.on_print(f"Text extraction enabled: extracting content between '{extract_start}' and '{extract_end}'", Fore.GREEN)
 
         # Get the list of text files
         text_files = self.get_text_files()
@@ -218,13 +227,13 @@ class DocumentIndexer:
                     existing_doc = self.collection.get(ids=[document_id])
                     if existing_doc and len(existing_doc.get('ids', [])) > 0:
                         if self.verbose:
-                            on_print(f"Skipping existing document: {document_id}", Fore.WHITE + Style.DIM)
+                            plugins.on_print(f"Skipping existing document: {document_id}", Fore.WHITE + Style.DIM)
                         continue
 
                 content = self.read_file(file_path)
 
                 if not content:
-                    on_print(f"An error occurred while reading file: {file_path}", Fore.RED)
+                    plugins.on_print(f"An error occurred while reading file: {file_path}", Fore.RED)
                     continue
 
                 # Add any additional metadata for the file
@@ -301,7 +310,7 @@ class DocumentIndexer:
                             summary_model = None
                     if add_summary and summary_model:
                         if self.verbose:
-                            on_print(f"Generating summary for document {document_id} using model: {summary_model}", Fore.WHITE + Style.DIM)
+                            plugins.on_print(f"Generating summary for document {document_id} using model: {summary_model}", Fore.WHITE + Style.DIM)
                         summary_prompt = f"""Provide a brief summary (2-5 sentences) of the following document. Focus on the main topic and key points:
 
 {content_to_chunk[:2000]}"""  # Limit to first 2000 chars for summary generation
@@ -321,10 +330,10 @@ class DocumentIndexer:
                             )
                             document_summary = f"[Document Summary: {summary_response.strip()}]\n\n"
                             if self.verbose:
-                                on_print(f"Summary generated: {summary_response.strip()}", Fore.GREEN)
+                                plugins.on_print(f"Summary generated: {summary_response.strip()}", Fore.GREEN)
                         except Exception as e:
                             if self.verbose:
-                                on_print(f"Failed to generate summary: {e}", Fore.YELLOW)
+                                plugins.on_print(f"Failed to generate summary: {e}", Fore.YELLOW)
                             document_summary = None
 
                     for i, chunk in enumerate(chunks):
@@ -335,7 +344,7 @@ class DocumentIndexer:
                             existing_chunk = self.collection.get(ids=[chunk_id])
                             if existing_chunk and len(existing_chunk.get('ids', [])) > 0:
                                 if self.verbose:
-                                    on_print(f"Skipping existing chunk: {chunk_id}", Fore.WHITE + Style.DIM)
+                                    plugins.on_print(f"Skipping existing chunk: {chunk_id}", Fore.WHITE + Style.DIM)
                                 continue
 
                         # Prepend document summary to chunk if available
@@ -353,7 +362,7 @@ class DocumentIndexer:
                             if self.verbose:
                                 embedding_info = "using extracted text" if extract_start and extract_end else "using full content"
                                 summary_info = " with summary" if document_summary else ""
-                                on_print(f"Generating embedding for chunk {chunk_id} using {self.model} ({embedding_info}{summary_info})", Fore.WHITE + Style.DIM)
+                                plugins.on_print(f"Generating embedding for chunk {chunk_id} using {self.model} ({embedding_info}{summary_info})", Fore.WHITE + Style.DIM)
                             # Prepare a potentially truncated string for the embedding call so we don't exceed
                             # the model/context window and risk freezing the Ollama server. The full chunk_with_summary
                             # remains unchanged for storage in ChromaDB.
@@ -390,7 +399,7 @@ class DocumentIndexer:
                     # This allows retrieval of complete documents when chunks are found
                     if self.full_doc_store and not self.full_doc_store.document_exists(document_id):
                         if self.verbose:
-                            on_print(f"Storing full document {document_id} in SQLite", Fore.WHITE + Style.DIM)
+                            plugins.on_print(f"Storing full document {document_id} in SQLite", Fore.WHITE + Style.DIM)
                         self.full_doc_store.store_document(document_id, content, file_path)
                 else:
                     # Embed the extracted content but store the whole document
@@ -402,7 +411,7 @@ class DocumentIndexer:
 
                         if self.verbose:
                             embedding_info = "using extracted text" if extract_start and extract_end else "using full content"
-                            on_print(f"Generating embedding for document {document_id} using {self.model} ({embedding_info})", Fore.WHITE + Style.DIM)
+                            plugins.on_print(f"Generating embedding for document {document_id} using {self.model} ({embedding_info})", Fore.WHITE + Style.DIM)
 
                         # Use extracted content for embedding computation. Truncate input to embedding API if needed
                         # while keeping the full document content unchanged for storage.
@@ -431,7 +440,7 @@ class DocumentIndexer:
             except KeyboardInterrupt:
                 break
             except Exception as e: # Catch other potential errors during processing
-                on_print(f"Error processing file {file_path}: {e}", Fore.RED)
+                plugins.on_print(f"Error processing file {file_path}: {e}", Fore.RED)
                 continue # Continue to the next file
 
 

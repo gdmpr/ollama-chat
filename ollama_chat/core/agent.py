@@ -4,13 +4,9 @@ import json
 
 from colorama import Fore, Style
 
-from ollama_chat.core import utils
-from ollama_chat.core import toolman
 from ollama_chat.core.context import Context
-from ollama_chat.core.utils import on_print
-from ollama_chat.core.ollama import ask_ollama
-from ollama_chat.core.utils import render_tools
-from ollama_chat.core.query_vector_database import load_chroma_client
+from ollama_chat.core import plugins
+from ollama_chat.core.ollama import ask_ollama,  render_tools
 
 
 class Agent:
@@ -61,10 +57,13 @@ class Agent:
         """
         return Agent.agent_registry.get(agent_name)
 
-    def query_llm(self, prompt, system_prompt=None, tools=[], model=None, *, ctx:Context):
+    def query_llm(self, prompt, system_prompt=None, tools=None, model=None, *, ctx:Context):
         """
         Query the Ollama API with the given prompt and return the response.
         """
+        if tools is None:
+            tools = []
+
         if system_prompt is None:
             system_prompt = self.system_prompt
 
@@ -72,9 +71,9 @@ class Agent:
             model = self.model
 
         if self.verbose:
-            on_print(f"System prompt:\n{system_prompt}", Fore.WHITE + Style.DIM)
-            on_print(f"User prompt:\n{prompt}", Fore.WHITE + Style.DIM)
-            on_print(f"Model: {model}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"System prompt:\n{system_prompt}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"User prompt:\n{prompt}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Model: {model}", Fore.WHITE + Style.DIM)
 
         llm_response = ask_ollama(
             system_prompt,
@@ -89,7 +88,7 @@ class Agent:
         )
 
         if self.verbose:
-            on_print(f"Response:\n{llm_response}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Response:\n{llm_response}", Fore.WHITE + Style.DIM)
 
         return llm_response
 
@@ -124,11 +123,14 @@ class Agent:
     - Review and revise
 
     Produce the subtasks now:"""
+
+
         thinking_model_is_different = self.thinking_model != self.model
         response = self.query_llm(prompt, system_prompt=self.system_prompt, model=self.thinking_model,  ctx=ctx)
 
         if thinking_model_is_different:
             _, reasoning_response = split_reasoning_and_final_response(response, self.thinking_model_reasoning_pattern)
+            reasoning = ""
             if reasoning_response:
                 reasoning = reasoning_response
             prompt = f"""Break down the following task into smaller, manageable subtasks:
@@ -152,7 +154,7 @@ Output each subtask on a new line, nothing more.
             response = self.query_llm(prompt, system_prompt=self.system_prompt, model=self.model,  ctx=ctx)
 
         if self.verbose:
-            on_print(f"Decomposed subtasks:\n{response}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Decomposed subtasks:\n{response}", Fore.WHITE + Style.DIM)
         subtasks = [subtask.strip() for subtask in response.split("\n") if subtask.strip()]
         contains_list = any(re.match(r'^\d+\.\s', subtask) or re.match(r'^[\*\-]\s', subtask) for subtask in subtasks)
         if contains_list:
@@ -196,7 +198,7 @@ Based on the context of the completed tasks and the remaining plan, provide a re
 """
 
         if self.verbose:
-            on_print(f"\nExecuting subtask: '{subtask}'", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"\nExecuting subtask: '{subtask}'", Fore.WHITE + Style.DIM)
 
         # Execute the subtask with available tools
         result = self.query_llm(prompt, system_prompt=self.system_prompt, tools=self.tools, ctx=ctx)
@@ -215,7 +217,7 @@ Based on the context of the completed tasks and the remaining plan, provide a re
             self.task_results = {}
 
             if self.verbose:
-                on_print(f"Initial TODO list: {self.todo_list}", Fore.WHITE + Style.DIM)
+                plugins.on_print(f"Initial TODO list: {self.todo_list}", Fore.WHITE + Style.DIM)
 
             if not self.todo_list:
                 return "No subtasks identified. Unable to process the task."
@@ -229,7 +231,7 @@ Based on the context of the completed tasks and the remaining plan, provide a re
                 # Prevent re-doing work
                 if current_subtask in self.completed_tasks:
                     if self.verbose:
-                        on_print(f"Skipping already completed subtask: '{current_subtask}'", Fore.WHITE + Style.DIM)
+                        plugins.on_print(f"Skipping already completed subtask: '{current_subtask}'", Fore.WHITE + Style.DIM)
                     continue
 
                 # Execute the subtask using the new context-aware method
@@ -242,7 +244,7 @@ Based on the context of the completed tasks and the remaining plan, provide a re
 
                 iteration_count += 1
                 if self.verbose:
-                    on_print(f"Finished iteration {iteration_count}. Remaining tasks: {len(self.todo_list)}", Fore.WHITE + Style.DIM)
+                    plugins.on_print(f"Finished iteration {iteration_count}. Remaining tasks: {len(self.todo_list)}", Fore.WHITE + Style.DIM)
 
 
             # Consolidate final response from all stored results
@@ -284,13 +286,13 @@ def create_new_agent_with_tools(system_prompt: str, tools: list[str], agent_name
     tools = list(set(tools))
 
     if ctx.verbose:
-        utils.on_print("Agent Creation Parameters:", Fore.WHITE + Style.DIM)
-        utils.on_print(f"System Prompt: {system_prompt}", Fore.WHITE + Style.DIM)
-        utils.on_print(f"Tools: {tools}", Fore.WHITE + Style.DIM)
-        utils.on_print(f"Agent Name: {agent_name}", Fore.WHITE + Style.DIM)
-        utils.on_print(f"Agent Description: {agent_description}", Fore.WHITE + Style.DIM)
+        plugins.on_print("Agent Creation Parameters:", Fore.WHITE + Style.DIM)
+        plugins.on_print(f"System Prompt: {system_prompt}", Fore.WHITE + Style.DIM)
+        plugins.on_print(f"Tools: {tools}", Fore.WHITE + Style.DIM)
+        plugins.on_print(f"Agent Name: {agent_name}", Fore.WHITE + Style.DIM)
+        plugins.on_print(f"Agent Description: {agent_description}", Fore.WHITE + Style.DIM)
         if task:
-            utils.on_print(f"Task: {task}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Task: {task}", Fore.WHITE + Style.DIM)
 
     # Validate inputs
     if not isinstance(system_prompt, str) or not system_prompt.strip():
@@ -301,7 +303,7 @@ def create_new_agent_with_tools(system_prompt: str, tools: list[str], agent_name
         raise ValueError("Agent name must be a non-empty string.")
 
     agent_tools = []
-    available_tools = toolman.tool_manager.get_available_tools(ctx=ctx)
+    available_tools = plugins.tool_manager.get_available_tools(ctx=ctx)
     for tool in tools:
         # If tool name starts with 'functions.', remove it
         if tool.startswith("functions."):
@@ -316,7 +318,7 @@ def create_new_agent_with_tools(system_prompt: str, tools: list[str], agent_name
         agent_tools.clear()
 
         # Some models are confused between collections and tools, so we need to check for this case
-        load_chroma_client(ctx=ctx)
+        #load_chroma_client(ctx=ctx)
 
         # List existing collections
         collections = None
@@ -375,12 +377,12 @@ def instantiate_agent_with_tools_and_process_task(task: str, system_prompt: str,
     - str: The final result after the agent processes the task.
     """
     if ctx.verbose:
-        utils.on_print("Agent Instantiation Parameters:", Fore.WHITE + Style.DIM)
-        utils.on_print(f"Task: {task}", Fore.WHITE + Style.DIM)
-        utils.on_print(f"System Prompt: {system_prompt}", Fore.WHITE + Style.DIM)
-        utils.on_print(f"Tools: {tools}", Fore.WHITE + Style.DIM)
-        utils.on_print(f"Agent Name: {agent_name}", Fore.WHITE + Style.DIM)
-        utils.on_print(f"Agent Description: {agent_description}", Fore.WHITE + Style.DIM)
+        plugins.on_print("Agent Instantiation Parameters:", Fore.WHITE + Style.DIM)
+        plugins.on_print(f"Task: {task}", Fore.WHITE + Style.DIM)
+        plugins.on_print(f"System Prompt: {system_prompt}", Fore.WHITE + Style.DIM)
+        plugins.on_print(f"Tools: {tools}", Fore.WHITE + Style.DIM)
+        plugins.on_print(f"Agent Name: {agent_name}", Fore.WHITE + Style.DIM)
+        plugins.on_print(f"Agent Description: {agent_description}", Fore.WHITE + Style.DIM)
 
 
     # If tools is a string, it's probably a JSON string, so parse it
@@ -407,7 +409,7 @@ def instantiate_agent_with_tools_and_process_task(task: str, system_prompt: str,
     tools = list(set(tools))
 
     agent_tools = []
-    available_tools = toolman.tool_manager.get_available_tools(ctx=ctx)
+    available_tools = plugins.tool_manager.get_available_tools(ctx=ctx)
     for tool in tools:
         # If tool name starts with 'functions.', remove it
         if tool.startswith("functions."):
@@ -422,7 +424,7 @@ def instantiate_agent_with_tools_and_process_task(task: str, system_prompt: str,
         agent_tools.clear()
 
         # Some models are confused between collections and tools, so we need to check for this case
-        load_chroma_client(ctx=ctx)
+        #load_chroma_client(ctx=ctx)
 
         # List existing collections
         collections = None

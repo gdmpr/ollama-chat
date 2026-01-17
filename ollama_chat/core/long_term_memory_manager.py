@@ -9,6 +9,7 @@ from appdirs import AppDirs
 from colorama import Fore, Style
 
 from ollama_chat.core import utils
+from ollama_chat.core import plugins
 from ollama_chat import APP_NAME, APP_AUTHOR, APP_VERSION
 from ollama_chat.core.ollama import ask_ollama
 from ollama_chat.core.context import Context
@@ -25,7 +26,9 @@ class LongTermMemoryManager:
         selected_model,
         verbose=False,
         num_ctx=None,
-        memory_file="long_term_memory.json"
+        memory_file="long_term_memory.json",
+        *,
+        ctx:Context
     ):
         # Initialize app directories using appdirs
         dirs = AppDirs(APP_NAME, APP_AUTHOR, version=APP_VERSION)
@@ -36,12 +39,95 @@ class LongTermMemoryManager:
         # Ensure the directory exists
         os.makedirs(prefs_dir, exist_ok=True)
 
-        # Path to the preferences file
+        # Path to the long-term memory file
         self.memory_file = os.path.join(prefs_dir, memory_file)
+        if ctx.verbose:
+            plugins.on_print( f"Long-term memory file: {self.memory_file}", Fore.WHITE + Style.DIM)
+
         self.memory = self._load_memory()
         self.selected_model = selected_model
         self.verbose = verbose
         self.num_ctx = num_ctx
+
+
+
+    def process_conversation(self, user_id, conversation, *, ctx:Context):
+        """
+        Processes a conversation and uses GPT to:
+        - Extract relevant key-value pairs for long-term memory.
+        - Check for contradictions in the memory.
+        """
+
+        # Convert conversation list of objects to a list of dict
+        conversation = [json.loads(json.dumps(obj, default=lambda o: vars(o))) for obj in conversation]
+
+        # Keeping only the conversation entries from the user and assistant
+        filtered_conversation = [entry for entry in conversation if entry['role'] not in ['system', 'tool', 'function']]
+
+        # Convert filtered_conversation array into a string for GPT prompt
+        conversation_str = "\n".join([f"{msg['role']}: {msg['content']}" for msg in filtered_conversation if 'role' in msg and 'content' in msg])
+        if self.verbose:
+            plugins.on_print(
+                f"Conversation entries from the user: {conversation_str}",
+                Fore.WHITE + Style.DIM
+            )
+
+        # Step 1: Extract key-value information with a specific prompt
+        system_prompt_extract = self._get_extraction_prompt()
+        if self.verbose:
+            plugins.on_print(
+                f"Extraction prompt for long-term memory: {system_prompt_extract}",
+                Fore.WHITE + Style.DIM
+            )
+
+        model_answer = ask_ollama(
+            system_prompt_extract,
+            conversation_str,
+            self.selected_model,
+            temperature=0.1,
+            no_bot_prompt=True,
+            stream_active=False,
+            num_ctx=self.num_ctx,
+            ctx=ctx
+        )
+
+        if self.verbose:
+            plugins.on_print(
+                f"Information extracted by the model: {model_answer}",
+                Fore.WHITE + Style.DIM
+            )
+
+        extracted_info = utils.extract_json( model_answer, ctx=ctx )
+
+        if self.verbose:
+            plugins.on_print(
+                f"Information extracted in JSON format: {extracted_info}",
+                Fore.WHITE + Style.DIM
+            )
+
+        # Step 2: Check for contradictions with existing memory
+        existing_memory = self.memory["users"].get(user_id, {})
+        system_prompt_conflict = self._get_conflict_check_prompt(existing_memory, conversation_str)
+        conflicting_info = utils.extract_json(
+            ask_ollama(
+                system_prompt_conflict,
+                conversation_str,
+                self.selected_model,
+                temperature=0.1,
+                no_bot_prompt=True,
+                stream_active=False,
+                num_ctx=self.num_ctx,
+                ctx=ctx
+            ),
+            ctx=ctx
+        )
+
+        # Remove conflicting info from memory if flagged by GPT
+        if conflicting_info:
+            self._remove_conflicting_info(user_id, conflicting_info)
+
+        # Update user's long-term memory with the newly extracted info
+        self._update_user_memory(user_id, extracted_info)
 
     def _load_memory(self):
         """Loads the long-term memory from the JSON file."""
@@ -69,65 +155,15 @@ class LongTermMemoryManager:
             # Save the updated memory back to the JSON file
             self._save_memory()
 
-    def process_conversation(self, user_id, conversation, *, ctx:Context):
-        """
-        Processes a conversation and uses GPT to:
-        - Extract relevant key-value pairs for long-term memory.
-        - Check for contradictions in the memory.
-        """
-
-        # Convert conversation list of objects to a list of dict
-        conversation = [json.loads(json.dumps(obj, default=lambda o: vars(o))) for obj in conversation]
-
-        filtered_conversation = [entry for entry in conversation if entry['role'] not in ['system', 'tool', 'function']]
-
-        # Convert conversation array into a string for GPT prompt
-        conversation_str = "\n".join([f"{msg['role']}: {msg['content']}" for msg in filtered_conversation if 'role' in msg and 'content' in msg])
-
-        # Step 1: Extract key-value information
-        system_prompt_extract = self._get_extraction_prompt()
-        extracted_info = utils.extract_json(ask_ollama(
-            system_prompt_extract,
-            conversation_str,
-            self.selected_model,
-            temperature=0.1,
-            no_bot_prompt=True,
-            stream_active=False,
-            num_ctx=self.num_ctx,
-            ctx=ctx
-        ),  ctx=ctx)
-
-        if self.verbose:
-            utils.on_print(f"Extracted information: {extracted_info}", Fore.WHITE + Style.DIM)
-
-        # Step 2: Check for contradictions with existing memory
-        existing_memory = self.memory["users"].get(user_id, {})
-        system_prompt_conflict = self._get_conflict_check_prompt(existing_memory, conversation_str)
-        conflicting_info = utils.extract_json(
-            ask_ollama(
-                system_prompt_conflict,
-                conversation_str,
-                self.selected_model,
-                temperature=0.1,
-                no_bot_prompt=True,
-                stream_active=False,
-                num_ctx=self.num_ctx,
-                ctx=ctx
-            ),
-            ctx=ctx
-        )
-
-        # Remove conflicting info from memory if flagged by GPT
-        if conflicting_info:
-            self._remove_conflicting_info(user_id, conflicting_info)
-
-        # Update user's long-term memory with the newly extracted info
-        self._update_user_memory(user_id, extracted_info)
-
     def _get_extraction_prompt(self):
         """
         Returns the system prompt for extracting key-value information from the conversation.
         """
+        # TODO! I have added the " a string "DataToStore:" followed by" in order to make the model
+        # return an invalid JSON string: if it was a valid JSON, the ask_ollama_with_conversation
+        # function would consider it a tool response and try to process it in an incorrect way; this
+        # looks to me like a bug and should be fixed in a better way than this trick, because it
+        # could be very useful to have prompts returning valid JSON data.
         return """
         You are analyzing a conversation between a user and an assistant. Your task is to extract key pieces of information
         about the user that could be useful for long-term memory.
@@ -142,7 +178,7 @@ class LongTermMemoryManager:
         Focus on extracting personal, long-term information that is explicitly or implicitly mentioned in the conversation.
         Ignore temporary or context-specific information (e.g., emotions, recent events).
 
-        The format should be a JSON object with key-value pairs. For example:
+        The format should be a string "DataToStore:" followed by a JSON object with key-value pairs. For example:
         {{
             "sister": "Rebecca",
             "friends": ["John", "Alice"],

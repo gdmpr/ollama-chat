@@ -2,7 +2,7 @@ import sqlite3
 
 from colorama import Fore, Style
 
-from ollama_chat.core.utils import on_print
+from ollama_chat.core import plugins
 
 class FullDocumentStore:
     """
@@ -44,7 +44,7 @@ class FullDocumentStore:
         self.conn.commit()
 
         if self.verbose:
-            on_print(f"FullDocumentStore initialized at: {self.db_path}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"FullDocumentStore initialized at: {self.db_path}", Fore.WHITE + Style.DIM)
 
     def store_document(self, document_id, full_content, file_path=None):
         """
@@ -65,11 +65,11 @@ class FullDocumentStore:
             self.conn.commit()
 
             if self.verbose:
-                on_print(f"Stored full document: {document_id}", Fore.WHITE + Style.DIM)
+                plugins.on_print(f"Stored full document: {document_id}", Fore.WHITE + Style.DIM)
 
             return True
         except sqlite3.Error as e:
-            on_print(f"Error storing document {document_id}: {e}", Fore.RED)
+            plugins.on_print(f"Error storing document {document_id}: {e}", Fore.RED)
             return False
 
     def get_document(self, document_id):
@@ -124,4 +124,4 @@ class FullDocumentStore:
         if self.conn:
             self.conn.close()
             if self.verbose:
-                on_print("FullDocumentStore connection closed", Fore.WHITE + Style.DIM)
+                plugins.on_print("FullDocumentStore connection closed", Fore.WHITE + Style.DIM)

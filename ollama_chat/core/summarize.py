@@ -2,7 +2,7 @@ import math
 
 from colorama import Fore, Style
 
-from ollama_chat.core import utils
+from ollama_chat.core import plugins
 from ollama_chat.core.ollama import ask_ollama
 from ollama_chat.core.context import Context
 
@@ -94,7 +94,7 @@ def summarize_text_file(file_path,  model=None, chunk_size=400, overlap=50, max_
 
     while len(current_text_words) > max_final_words:
         if ctx.verbose:
-            utils.on_print(f"\n>>> Iteration: Processing {len(current_text_words)} words...", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"\n>>> Iteration: Processing {len(current_text_words)} words...", Fore.WHITE + Style.DIM)
 
         # Determine the size of the summary for each chunk in this iteration
         # We want the total summary to be smaller than the current text length
@@ -117,7 +117,7 @@ def summarize_text_file(file_path,  model=None, chunk_size=400, overlap=50, max_
         previous_summary = None # Keep track of the last summary
         for i, chunk in enumerate(chunks):
             if ctx.verbose:
-                utils.on_print(f"Processing chunk {i+1}/{len(chunks)} with {len(chunk.split())} words", Fore.WHITE + Style.DIM)
+                plugins.on_print(f"Processing chunk {i+1}/{len(chunks)} with {len(chunk.split())} words", Fore.WHITE + Style.DIM)
             summary = summarize_chunk(
                 chunk,
                 model,
@@ -135,8 +135,8 @@ def summarize_text_file(file_path,  model=None, chunk_size=400, overlap=50, max_
         current_text_words = combined_summaries.split()
 
         if ctx.verbose:
-            utils.on_print(f"<<< Iteration Complete: {len(summaries)} summaries created, new word count is {len(current_text_words)}", Fore.WHITE + Style.DIM)
-            utils.on_print(f"Current text after summarization: {combined_summaries[:100]}...", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"<<< Iteration Complete: {len(summaries)} summaries created, new word count is {len(current_text_words)}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Current text after summarization: {combined_summaries[:100]}...", Fore.WHITE + Style.DIM)
 
     final_summary = " ".join(current_text_words)
     return final_summary

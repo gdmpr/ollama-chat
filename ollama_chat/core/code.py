@@ -32,8 +32,6 @@ from ollama_chat.core.document_indexer import DocumentIndexer
 from ollama_chat.core.full_document_store import FullDocumentStore
 from ollama_chat.core.simple_web_scraper import SimpleWebScraper
 from ollama_chat.core import plugins
-#from ollama_chat.core.plugin_manager import discover_plugins
-from ollama_chat.core import toolman
 from ollama_chat.core.context import Context
 from ollama_chat.core import query_vector_database as vector_db
 
@@ -119,7 +117,7 @@ def requires_plugins(requested_tool_names):
     if not requested_tool_names:
         return False
 
-    builtin_tools = toolman.tool_manager.get_builtin_tool_names()
+    builtin_tools = plugins.tool_manager.get_builtin_tool_names()
 
     for tool_name in requested_tool_names:
         # Strip any leading or trailing spaces, single or double quotes
@@ -135,11 +133,10 @@ def retrieve_relevant_memory(query_text, top_k=3, *, ctx:Context):
     """
     Retreives the relevant memory for the query_text from the memory manager.
     """
-
     if not ctx.memory_manager:
         return []
-
     return ctx.memory_manager.retrieve_relevant_memory(query_text, top_k)
+
 
 def print_possible_prompt_commands():
     """
@@ -167,7 +164,7 @@ def load_additional_chatbots(json_file, *, ctx:Context):
         # Check if the file exists in the same directory as the script
         json_file = os.path.join(os.path.dirname(__file__), json_file)
         if not os.path.exists(json_file):
-            utils.on_print(f"Additional chatbots file not found: {json_file}", Fore.RED)
+            plugins.on_print(f"Additional chatbots file not found: {json_file}", Fore.RED)
             return
 
     with open(json_file, 'r', encoding="utf8") as f:
@@ -183,13 +180,14 @@ def prompt_for_chatbot(ctx:Context):
     Prompts the user to choose between the available chatbots.
     """
 
-    utils.on_print("Available chatbots:", Style.RESET_ALL)
+    plugins.on_print("Available chatbots:", Style.RESET_ALL)
     for i, chatbot in enumerate(ctx.chatbots):
-        utils.on_print(f"{i}. {chatbot['name']} - {chatbot['description']}")
+        plugins.on_print(f"{i}. {chatbot['name']} - {chatbot['description']}")
 
-    choice = int(utils.on_user_input("Enter the number of your preferred chatbot [0]: ") or 0)
+    choice = int(plugins.on_user_input("Enter the number of your preferred chatbot [0]: ") or 0)
 
     return ctx.chatbots[choice]
+
 
 def select_openai_model_if_available(model_name, *, ctx:Context):
     """
@@ -204,7 +202,7 @@ def select_openai_model_if_available(model_name, *, ctx:Context):
     try:
         models = ctx.openai_client.models.list().data
     except Exception as e:
-        utils.on_print(f"Failed to fetch OpenAI models: {str(e)}", Fore.RED)
+        plugins.on_print(f"Failed to fetch OpenAI models: {str(e)}", Fore.RED)
         return None
 
     # Remove non-chat models from the list (keep only GPT models and oX models like o1 and o3)
@@ -213,11 +211,12 @@ def select_openai_model_if_available(model_name, *, ctx:Context):
     for model in models:
         if model.id == model_name:
             if ctx.verbose:
-                utils.on_print(f"Selected model: {model_name}", Fore.WHITE + Style.DIM)
+                plugins.on_print(f"Selected model: {model_name}", Fore.WHITE + Style.DIM)
             return model_name
 
-    utils.on_print(f"Model {model_name} not found.", Fore.RED)
+    plugins.on_print(f"Model {model_name} not found.", Fore.RED)
     return None
+
 
 def prompt_for_openai_model(default_model, current_model, *,  ctx:Context):
     """
@@ -228,7 +227,7 @@ def prompt_for_openai_model(default_model, current_model, *,  ctx:Context):
     try:
         models = ctx.openai_client.models.list().data
     except Exception as e:
-        utils.on_print(f"Failed to fetch OpenAI models: {str(e)}", Fore.RED)
+        plugins.on_print(f"Failed to fetch OpenAI models: {str(e)}", Fore.RED)
         return None
 
     if current_model is None:
@@ -238,11 +237,11 @@ def prompt_for_openai_model(default_model, current_model, *,  ctx:Context):
     models = [model for model in models if model.id.startswith("gpt-")]
 
     # Display available models
-    utils.on_print("Available OpenAI models:\n", Style.RESET_ALL)
+    plugins.on_print("Available OpenAI models:\n", Style.RESET_ALL)
     for i, model in enumerate(models):
         star = " *" if model.id == current_model else ""
-        utils.on_stdout_write(f"{i}. {model.id}{star}\n")
-    utils.on_stdout_flush()
+        plugins.on_stdout_write(f"{i}. {model.id}{star}\n")
+    plugins.on_stdout_flush()
 
     # Default choice index for current_model
     default_choice_index = None
@@ -255,15 +254,16 @@ def prompt_for_openai_model(default_model, current_model, *,  ctx:Context):
         default_choice_index = 0
 
     # Prompt user to choose a model
-    choice = int(utils.on_user_input("Enter the number of your preferred model [" + str(default_choice_index) + "]: ") or default_choice_index)
+    choice = int(plugins.on_user_input("Enter the number of your preferred model [" + str(default_choice_index) + "]: ") or default_choice_index)
 
     # Select the chosen model
     selected_model = models[choice].id
 
     if ctx.verbose:
-        utils.on_print(f"Selected model: {selected_model}", Fore.WHITE + Style.DIM)
+        plugins.on_print(f"Selected model: {selected_model}", Fore.WHITE + Style.DIM)
 
     return selected_model
+
 
 def prompt_for_ollama_model(default_model, current_model, *,  ctx:Context):
     """
@@ -274,18 +274,20 @@ def prompt_for_ollama_model(default_model, current_model, *,  ctx:Context):
     try:
         models = ollama.list()["models"]
     except Exception as e:
-        utils.on_print(f"Ollama API is not running: {e}", Fore.RED)
+        plugins.on_print(f"Ollama API is not running: {e}", Fore.RED)
         return None
 
     if current_model is None:
         current_model = default_model
 
     # Ask user to choose a model
-    utils.on_print("Available models:\n", Style.RESET_ALL)
+    plugins.on_print("Available models:\n", Style.RESET_ALL)
     for i, model in enumerate(models):
         star = " *" if model['model'] == current_model else ""
-        utils.on_stdout_write(f"{i}. {model['model']} ({utils.bytes_to_gibibytes(model['size'])}){star}\n")
-    utils.on_stdout_flush()
+        plugins.on_stdout_write(
+            f"{i}. {model['model']} ({utils.bytes_to_gibibytes(model['size'])}){star}\n"
+        )
+    plugins.on_stdout_flush()
 
     default_choice_index = None
     for i, model in enumerate(models):
@@ -296,24 +298,28 @@ def prompt_for_ollama_model(default_model, current_model, *,  ctx:Context):
     if default_choice_index is None:
         default_choice_index = 0
 
-    choice = int(utils.on_user_input("Enter the number of your preferred model [" + str(default_choice_index) + "]: ") or default_choice_index)
+    choice = int(
+        plugins.on_user_input(
+            "Enter the number of your preferred model [" + str(default_choice_index) + "]: "
+        ) or default_choice_index
+    )
 
     # Use the chosen model
     selected_model = models[choice]['model']
 
     if ctx.verbose:
-        utils.on_print(f"Selected model: {selected_model}", Fore.WHITE + Style.DIM)
+        plugins.on_print(f"Selected model: {selected_model}", Fore.WHITE + Style.DIM)
     return selected_model
+
 
 def prompt_for_model(default_model, current_model,  *,  ctx:Context):
     """
     Prompts the user for the model to use.
     """
-
     if ctx.use_openai:
         return prompt_for_openai_model(default_model, current_model, ctx=ctx)
-
     return prompt_for_ollama_model(default_model, current_model, ctx=ctx)
+
 
 def run(*, ctx:Context):
     """
@@ -333,7 +339,10 @@ def run(*, ctx:Context):
     if rag_operations_requested and not ctx.disable_plugins:
         ctx.disable_plugins = True
         if ctx.verbose:
-            utils.on_print("Plugins automatically disabled for RAG operations (indexing/querying/web-search).", Fore.YELLOW)
+            plugins.on_print(
+                "Plugins automatically disabled for RAG operations (indexing/querying/web-search).",
+                Fore.YELLOW
+            )
 
 
     # We'll also need to check chatbot tools, but we need to load chatbot config first
@@ -344,59 +353,65 @@ def run(*, ctx:Context):
     load_plugins_initially = not ctx.disable_plugins or requires_plugins(ctx.requested_tool_names)
 
     if ctx.verbose and ctx.disable_plugins and not load_plugins_initially:
-        utils.on_print("Plugins are disabled and no plugin tools were requested via command line.", Fore.YELLOW)
+        plugins.on_print(
+            "Plugins are disabled and no plugin tools were requested via command line.",
+            Fore.YELLOW
+        )
     elif ctx.verbose and ctx.disable_plugins and load_plugins_initially:
-        utils.on_print("Plugins are disabled but plugin tools were requested. Loading plugins anyway.", Fore.YELLOW)
+        plugins.on_print(
+            "Plugins are disabled but plugin tools were requested. Loading plugins anyway.",
+            Fore.YELLOW
+        )
 
     # Discover plugins before listing tools
     if ctx.list_tools:
-        toolman.tool_manager.list_tools(ctx=ctx)
+        plugins.tool_manager.list_tools(ctx=ctx)
         sys.exit(0)
 
     # Handle listing collections if requested
     if ctx.list_collections:
 
-        vector_db.load_chroma_client(ctx=ctx)
+        #main.load_chroma_client(ctx=ctx)
 
         if not ctx.chroma_client:
-            utils.on_print("Failed to initialize ChromaDB client.", Fore.RED)
+            plugins.on_print("ChromaDB client is not initialized.", Fore.RED)
             sys.exit(1)
 
         try:
             collections = ctx.chroma_client.list_collections()
 
             if not collections:
-                utils.on_print("\nNo collections found.")
+                plugins.on_print("\nNo collections found.")
             else:
-                utils.on_print(f"\nAvailable ChromaDB collections ({len(collections)}):")
-                utils.on_print("=" * 80)
+                plugins.on_print(f"\nAvailable ChromaDB collections ({len(collections)}):")
+                plugins.on_print("=" * 80)
 
                 for collection in collections:
-                    utils.on_print(f"\nCollection: {collection.name}")
+                    plugins.on_print(f"\nCollection: {collection.name}")
 
                     # Get collection metadata
                     if hasattr(collection, 'metadata') and collection.metadata:
                         if isinstance(collection.metadata, dict):
                             if 'description' in collection.metadata:
-                                utils. on_print(f"  Description: {collection.metadata['description']}")
+                                plugins.on_print(f"  Description: {collection.metadata['description']}")
 
                             # Print other metadata
                             for key, value in collection.metadata.items():
                                 if key != 'description':
-                                    utils.on_print(f"  {key}: {value}")
+                                    plugins.on_print(f"  {key}: {value}")
 
                     # Get collection count
                     try:
                         count = collection.count()
-                        utils.on_print(f"  Documents: {count}")
+                        plugins.on_print(f"  Documents: {count}")
                     except Exception as e:
                         if ctx.verbose:
-                            utils.on_print(f"Exception {e}")
+                            plugins.on_print(f"Exception {e}")
 
-                utils.on_print("\n" + "=" * 80)
+                plugins.on_print("\n" + "=" * 80)
 
         except Exception as e:
-            utils.on_print(f"Error listing collections: {str(e)}", Fore.RED)
+            plugins.on_print(f"Error listing collections: {str(e)}", Fore.RED)
             if ctx.verbose:
                 traceback.print_exc()
             sys.exit(1)
@@ -411,13 +426,12 @@ def run(*, ctx:Context):
         ctx.thinking_model = preferred_model
 
     if ctx.verbose:
-        utils.on_print(f"Using thinking model: {ctx.thinking_model}", Fore.WHITE + Style.DIM)
+        plugins.on_print(f"Using thinking model: {ctx.thinking_model}", Fore.WHITE + Style.DIM)
 
-    use_memory_manager = ctx.memory
     num_ctx = ctx.context_window
 
     if ctx.verbose and num_ctx:
-        utils.on_print(f"Ollama context window size: {num_ctx}", Fore.WHITE + Style.DIM)
+        plugins.on_print(f"Ollama context window size: {num_ctx}", Fore.WHITE + Style.DIM)
 
     # Get today's date
     today = f"Today's date is {datetime.now().strftime('%A, %B %d, %Y %I:%M %p')}."
@@ -430,9 +444,11 @@ def run(*, ctx:Context):
     # If output file already exists, ask user for confirmation to overwrite
     if ctx.output and os.path.exists(ctx.output):
         if ctx.interactive_mode:
-            confirmation = utils.on_user_input(f"Output file '{ctx.output}' already exists. Overwrite? (y/n): ").lower()
+            confirmation = plugins.on_user_input(
+                f"Output file '{ctx.output}' already exists. Overwrite? (y/n): "
+            ).lower()
             if confirmation not in ('y', 'yes'):
-                utils.on_print("Output file not overwritten.")
+                plugins.on_print("Output file not overwritten.")
                 ctx.output = None
             else:
                 # Delete the existing file
@@ -442,7 +458,7 @@ def run(*, ctx:Context):
             os.remove(ctx.output)
 
     if ctx.verbose and ctx.user_prompt:
-        utils.on_print(f"User prompt: {ctx.user_prompt}", Fore.WHITE + Style.DIM)
+        plugins.on_print(f"User prompt: {ctx.user_prompt}", Fore.WHITE + Style.DIM)
 
     # Load additional chatbots from a JSON file to check for tools
     load_additional_chatbots(ctx.additional_chatbots_file, ctx=ctx)
@@ -456,10 +472,10 @@ def run(*, ctx:Context):
                 chatbot = bot
                 break
         if chatbot is None:
-            utils.on_print(f"Chatbot '{ctx.chatbot}' not found.", Fore.RED)
+            plugins.on_print(f"Chatbot '{ctx.chatbot}' not found.", Fore.RED)
 
         if ctx.verbose and chatbot and 'name' in chatbot:
-            utils.on_print(f"Using chatbot: {chatbot['name']}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Using chatbot: {chatbot['name']}", Fore.WHITE + Style.DIM)
 
     if chatbot is None:
         # Load the default chatbot
@@ -473,12 +489,19 @@ def run(*, ctx:Context):
     load_plugins = not ctx.disable_plugins or requires_plugins(all_requested_tools)
 
     if ctx.verbose and ctx.disable_plugins and requires_plugins(chatbot_tool_names):
-        utils.on_print("Chatbot requires plugin tools. Loading plugins despite --disable-plugins flag.", Fore.YELLOW)
+        plugins.on_print(
+            "Chatbot requires plugin tools. Loading plugins despite --disable-plugins flag.",
+            Fore.YELLOW
+        )
 
-    plugins.plugin_manager.plugins = plugins.plugin_manager.discover_plugins(ctx=ctx,  plugin_folder=ctx.plugins_folder, load_plugins=load_plugins)
+    plugins.plugin_manager.plugins = plugins.plugin_manager.discover_plugins(
+        ctx=ctx,
+       plugin_folder=ctx.plugins_folder,
+       load_plugins=load_plugins
+    )
 
     if ctx.verbose:
-        utils.on_print(f"Verbose mode: {ctx.verbose}", Fore.WHITE + Style.DIM)
+        plugins.on_print(f"Verbose mode: {ctx.verbose}", Fore.WHITE + Style.DIM)
 
     # Initialize global full document store for LLM tool use
     # This allows query_vector_database to retrieve full documents when called as a tool
@@ -486,33 +509,47 @@ def run(*, ctx:Context):
         try:
             ctx.full_doc_store = FullDocumentStore(db_path=ctx.full_docs_db, verbose=ctx.verbose)
             if ctx.verbose:
-                utils.on_print(f"Initialized global full document store: {ctx.full_docs_db}", Fore.WHITE + Style.DIM)
+                plugins.on_print(
+                    f"Initialized global full document store: {ctx.full_docs_db}",
+                    Fore.WHITE + Style.DIM
+                )
         except Exception as e:
-            utils.on_print(f"Warning: Failed to initialize full document store: {e}", Fore.YELLOW)
+            plugins.on_print(f"Warning: Failed to initialize full document store: {e}", Fore.YELLOW)
             ctx.full_doc_store = None
 
     # Handle document indexing if requested
     if ctx.index_documents:
-        vector_db.load_chroma_client(ctx=ctx)
+        #main.load_chroma_client(ctx=ctx)
 
         if not ctx.chroma_client:
-            utils.on_print("Failed to initialize ChromaDB client. Please specify --chroma-path or --chroma-host/--chroma-port.", Fore.RED)
+            plugins.on_print(
+                "Failed to initialize ChromaDB client. Please specify --chroma-path or --chroma-host/--chroma-port.",
+                Fore.RED
+            )
             sys.exit(1)
 
         if not ctx.current_collection_name:
-            utils.on_print("No ChromaDB collection specified. Use --collection to specify a collection name.", Fore.RED)
+            plugins.on_print(
+                "No ChromaDB collection specified. Use --collection to specify a collection name.",
+                Fore.RED
+            )
             sys.exit(1)
 
         if ctx.verbose:
-            utils.on_print(f"Indexing documents from: {ctx.index_documents}", Fore.WHITE + Style.DIM)
-            utils.on_print(f"Collection: {ctx.current_collection_name}", Fore.WHITE + Style.DIM)
-            utils.on_print(f"Chunking: {ctx.chunk_documents}", Fore.WHITE + Style.DIM)
-            utils.on_print(f"Skip existing: {ctx.skip_existing}", Fore.WHITE + Style.DIM)
+            plugins.on_print(
+                f"Indexing documents from: {ctx.index_documents}", Fore.WHITE + Style.DIM
+            )
+            plugins.on_print(f"Collection: {ctx.current_collection_name}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Chunking: {ctx.chunk_documents}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Skip existing: {ctx.skip_existing}", Fore.WHITE + Style.DIM)
             if ctx.extract_start or ctx.extract_end:
-                utils.on_print(f"Extraction range: '{ctx.extract_start}' to '{ctx.extract_end}'", Fore.WHITE + Style.DIM)
-            utils.on_print(f"Split paragraphs: {ctx.split_paragraphs}", Fore.WHITE + Style.DIM)
-            utils.on_print(f"Add summary: {ctx.add_summary}", Fore.WHITE + Style.DIM)
-            utils.on_print(f"Full docs database: {ctx.full_docs_db}", Fore.WHITE + Style.DIM)
+                plugins.on_print(
+                    f"Extraction range: '{ctx.extract_start}' to '{ctx.extract_end}'",
+                    Fore.WHITE + Style.DIM
+                )
+            plugins.on_print(f"Split paragraphs: {ctx.split_paragraphs}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Add summary: {ctx.add_summary}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Full docs database: {ctx.full_docs_db}", Fore.WHITE + Style.DIM)
 
         # Initialize full document store if chunking is enabled
         ctx.full_doc_store = None
@@ -544,7 +581,7 @@ def run(*, ctx:Context):
         if ctx.full_doc_store:
             ctx.full_doc_store.close()
 
-        utils.on_print(f"Indexing completed for folder: {ctx.index_documents}", Fore.GREEN)
+        plugins.on_print(f"Indexing completed for folder: {ctx.index_documents}", Fore.GREEN)
 
         # If only indexing (no query or interactive mode), exit
         if not ctx.query and not ctx.interactive_mode:
@@ -552,19 +589,28 @@ def run(*, ctx:Context):
 
     # Handle catchup of full documents from ChromaDB metadata
     if ctx.catchup_full_docs:
-        vector_db.load_chroma_client(ctx=ctx)
+        #main.load_chroma_client(ctx=ctx)
 
         if not ctx.chroma_client:
-            utils.on_print("Failed to initialize ChromaDB client. Please specify --chroma-path or --chroma-host/--chroma-port.", Fore.RED)
+            plugins.on_print(
+                "Failed to initialize ChromaDB client. Please specify --chroma-path or --chroma-host/--chroma-port.",
+                Fore.RED
+            )
             sys.exit(1)
 
         if not ctx.current_collection_name:
-            utils.on_print("No ChromaDB collection specified. Use --collection to specify a collection name.", Fore.RED)
+            plugins.on_print(
+                "No ChromaDB collection specified. Use --collection to specify a collection name.",
+                Fore.RED
+            )
             sys.exit(1)
 
         if ctx.verbose:
-            utils.on_print(f"Running catchup for collection: {ctx.current_collection_name}", Fore.WHITE + Style.DIM)
-            utils.on_print(f"Full docs database: {ctx.full_docs_db}", Fore.WHITE + Style.DIM)
+            plugins.on_print(
+                f"Running catchup for collection: {ctx.current_collection_name}",
+                Fore.WHITE + Style.DIM
+            )
+            plugins.on_print(f"Full docs database: {ctx.full_docs_db}", Fore.WHITE + Style.DIM)
 
         # Initialize full document store
         ctx.full_doc_store = FullDocumentStore(db_path=ctx.full_docs_db, verbose=ctx.verbose)
@@ -576,7 +622,9 @@ def run(*, ctx:Context):
                 verbose=ctx.verbose
             )
 
-            utils.on_print(f"\nCatchup completed. Indexed {indexed_count} full documents.", Fore.GREEN)
+            plugins.on_print(
+                f"\nCatchup completed. Indexed {indexed_count} full documents.", Fore.GREEN
+            )
         finally:
             ctx.full_doc_store.close()
 
@@ -586,24 +634,27 @@ def run(*, ctx:Context):
 
     # Handle vector database query if requested
     if ctx.query:
-        vector_db.load_chroma_client(ctx=ctx)
+        #main.load_chroma_client(ctx=ctx)
 
         if not ctx.current_collection_name:
-            utils.on_print("No ChromaDB collection specified. Use --collection to specify a collection name.", Fore.RED)
+            plugins.on_print(
+                "No ChromaDB collection specified. Use --collection to specify a collection name.",
+                Fore.RED
+            )
             sys.exit(1)
 
         # Set query parameters
         query_n_results = ctx.query_n_results if ctx.query_n_results is not None else ctx.number_of_documents_to_return_from_vector_db
 
         if ctx.verbose:
-            utils.on_print(f"Querying collection: {ctx.current_collection_name}", Fore.WHITE + Style.DIM)
-            utils.on_print(f"Query: {ctx.query}", Fore.WHITE + Style.DIM)
-            utils.on_print(f"Number of results: {query_n_results}", Fore.WHITE + Style.DIM)
-            utils.on_print(f"Distance threshold: {ctx.query_distance_threshold}", Fore.WHITE + Style.DIM)
-            utils.on_print(f"Expand query: {ctx.expand_query}", Fore.WHITE + Style.DIM)
-            utils.on_print(f"Include full documents: {ctx.include_full_docs}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Querying collection: {ctx.current_collection_name}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Query: {ctx.query}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Number of results: {query_n_results}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Distance threshold: {ctx.query_distance_threshold}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Expand query: {ctx.expand_query}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Include full documents: {ctx.include_full_docs}", Fore.WHITE + Style.DIM)
             if ctx.include_full_docs:
-                utils.on_print(f"Full docs database: {ctx.full_docs_db}", Fore.WHITE + Style.DIM)
+                plugins.on_print(f"Full docs database: {ctx.full_docs_db}", Fore.WHITE + Style.DIM)
 
         # Initialize full document store if requested
         ctx.full_doc_store = None
@@ -633,15 +684,15 @@ def run(*, ctx:Context):
             if ctx.output:
                 with open(ctx.output, 'w', encoding='utf-8') as f:
                     f.write(query_results)
-                utils.on_print(f"Query results saved to: {ctx.output}", Fore.GREEN)
+                plugins.on_print(f"Query results saved to: {ctx.output}", Fore.GREEN)
             else:
-                utils.on_print("\n" + "="*80, Fore.CYAN)
-                utils.on_print("QUERY RESULTS", Fore.CYAN + Style.BRIGHT)
-                utils.on_print("="*80, Fore.CYAN)
-                utils.on_print(query_results)
-                utils.on_print("="*80, Fore.CYAN)
+                plugins.on_print("\n" + "="*80, Fore.CYAN)
+                plugins.on_print("QUERY RESULTS", Fore.CYAN + Style.BRIGHT)
+                plugins.on_print("="*80, Fore.CYAN)
+                plugins.on_print(query_results)
+                plugins.on_print("="*80, Fore.CYAN)
         else:
-            utils.on_print("No results found for the query.", Fore.YELLOW)
+            plugins.on_print("No results found for the query.", Fore.YELLOW)
 
         # If not in interactive mode, exit after query
         if not ctx.interactive_mode:
@@ -653,41 +704,60 @@ def run(*, ctx:Context):
     if ctx.instantiate_agent:
         # Validate required parameters
         if not ctx.agent_task:
-            utils.on_print("Error: --agent-task is required when using --instantiate-agent", Fore.RED)
+            plugins.on_print(
+                "Error: --agent-task is required when using --instantiate-agent",
+               Fore.RED
+            )
             sys.exit(1)
 
         if not ctx.agent_system_prompt:
-            utils.on_print("Error: --agent-system-prompt is required when using --instantiate-agent", Fore.RED)
+            plugins.on_print(
+                "Error: --agent-system-prompt is required when using --instantiate-agent"
+                , Fore.RED
+            )
             sys.exit(1)
 
         if ctx.agent_tools is None:
-            utils.on_print("Error: --agent-tools is required when using --instantiate-agent (use empty string for no tools)", Fore.RED)
+            plugins.on_print(
+                "Error: --agent-tools is required when using --instantiate-agent (use empty string for no tools)"
+                , Fore.RED
+            )
             sys.exit(1)
 
         if not ctx.agent_name:
-            utils.on_print("Error: --agent-name is required when using --instantiate-agent", Fore.RED)
+            plugins.on_print(
+                "Error: --agent-name is required when using --instantiate-agent",
+                Fore.RED
+            )
             sys.exit(1)
 
         if not ctx.agent_description:
-            utils.on_print("Error: --agent-description is required when using --instantiate-agent", Fore.RED)
+            plugins.on_print(
+                "Error: --agent-description is required when using --instantiate-agent",
+                Fore.RED
+            )
             sys.exit(1)
 
         # Parse tools list (handle empty string for no tools)
         agent_tools_list = [tool.strip() for tool in ctx.agent_tools .split(',') if tool.strip()]
 
         if ctx.verbose:
-            utils.on_print(f"Instantiating agent: {ctx.agent_name}", Fore.WHITE + Style.DIM)
-            utils.on_print(f"Task: {ctx.agent_task}", Fore.WHITE + Style.DIM)
-            utils.on_print(f"System Prompt: {ctx.agent_system_prompt}", Fore.WHITE + Style.DIM)
-            utils.on_print(f"Tools: {agent_tools_list}", Fore.WHITE + Style.DIM)
-            utils.on_print(f"Description: {ctx.agent_description}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Instantiating agent: {ctx.agent_name}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Task: {ctx.agent_task}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"System Prompt: {ctx.agent_system_prompt}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Tools: {agent_tools_list}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Description: {ctx.agent_description}", Fore.WHITE + Style.DIM)
 
         # Load ChromaDB if needed (for agents that use vector database tools)
-        vector_db.load_chroma_client(ctx=ctx)
+        #main.load_chroma_client(ctx=ctx)
 
         # Ensure plugins are loaded if any of the agent tools require them
         if not plugins.plugin_manager.plugins and requires_plugins(agent_tools_list):
-            plugins.plugin_manager.plugins = plugins.plugin_manager.discover_plugins(plugin_folder=ctx.plugins_folder, load_plugins=True,  ctx=ctx)
+            plugins.plugin_manager.plugins = plugins.plugin_manager.discover_plugins(
+                plugin_folder=ctx.plugins_folder,
+                load_plugins=True,
+                ctx=ctx
+            )
 
         # Initialize the model and API client (required for agent instantiation)
         # Set up Azure OpenAI client if using Azure
@@ -705,9 +775,14 @@ def run(*, ctx:Context):
                 )
                 ctx.current_model = deployment
                 if ctx.verbose:
-                    utils.on_print(f"Azure OpenAI initialized with deployment: {deployment}", Fore.WHITE + Style.DIM)
+                    plugins.on_print(
+                        f"Azure OpenAI initialized with deployment: {deployment}",
+                        Fore.WHITE + Style.DIM
+                    )
             else:
-                utils.on_print("Azure OpenAI configuration incomplete, falling back to Ollama", Fore.YELLOW)
+                plugins.on_print(
+                    "Azure OpenAI configuration incomplete, falling back to Ollama", Fore.YELLOW
+                )
                 ctx.use_azure_openai = False
 
         # Set up OpenAI client if using OpenAI
@@ -718,10 +793,15 @@ def run(*, ctx:Context):
                 ctx.openai_client = OpenAI(api_key=api_key)
                 ctx.current_model = preferred_model if preferred_model else "gpt-4"
                 if ctx.verbose:
-                    utils.on_print(f"OpenAI initialized with model: {ctx.current_model}", Fore.WHITE + Style.DIM)
+                    plugins.on_print(
+                        f"OpenAI initialized with model: {ctx.current_model}",
+                        Fore.WHITE + Style.DIM
+                    )
             else:
                 if ctx.verbose:
-                    utils.on_print("OpenAI API key not found, falling back to Ollama", Fore.YELLOW)
+                    plugins.on_print(
+                        "OpenAI API key not found, falling back to Ollama", Fore.YELLOW
+                    )
                 ctx.use_openai = False
 
         # Initialize the model if not using OpenAI/Azure
@@ -734,9 +814,9 @@ def run(*, ctx:Context):
                 ctx.current_model = select_ollama_model_if_available(default_model_temp, ctx=ctx)
 
         if ctx.verbose:
-            utils.on_print(f"Using model: {ctx.current_model}", Fore.WHITE + Style.DIM)
-            utils.on_print(f"Use Azure OpenAI: {ctx.use_azure_openai}", Fore.WHITE + Style.DIM)
-            utils.on_print(f"Use OpenAI: {ctx.use_openai}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Using model: {ctx.current_model}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Use Azure OpenAI: {ctx.use_azure_openai}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Use OpenAI: {ctx.use_openai}", Fore.WHITE + Style.DIM)
 
         # Call the agent instantiation function directly
         result = agent.instantiate_agent_with_tools_and_process_task(
@@ -755,18 +835,26 @@ def run(*, ctx:Context):
                 f.write(str(result))
 
             if ctx.verbose:
-                utils.on_print(f"Agent result saved to: {ctx.output}", Fore.GREEN)
+                plugins.on_print(f"Agent result saved to: {ctx.output}", Fore.GREEN)
         else:
-            utils.on_print(result)
+            plugins.on_print(result)
 
         # Exit after agent execution (non-interactive mode)
         if not ctx.interactive_mode:
             sys.exit(0)
 
-    ctx.auto_start = ("starts_conversation" in chatbot and chatbot["starts_conversation"]) or ctx.auto_start
+    ctx.auto_start = (
+        "starts_conversation" in chatbot and chatbot["starts_conversation"]
+    ) or ctx.auto_start
     system_prompt = chatbot["system_prompt"]
-    ctx.use_openai = ctx.use_openai or (hasattr(chatbot, 'use_openai') and getattr(chatbot, 'use_openai'))
-    ctx.use_azure_openai = ctx.use_azure_openai or (hasattr(chatbot, 'use_azure_openai') and getattr(chatbot, 'use_azure_openai'))
+    ctx.use_openai = (
+        ctx.use_openai or (hasattr(chatbot, 'use_openai') and getattr(chatbot, 'use_openai'))
+    )
+    ctx.use_azure_openai = (
+        ctx.use_azure_openai or (
+            hasattr(chatbot, 'use_azure_openai') and getattr(chatbot, 'use_azure_openai')
+        )
+    )
     if "preferred_model" in chatbot:
         default_model = chatbot["preferred_model"]
     if preferred_model:
@@ -783,26 +871,41 @@ def run(*, ctx:Context):
         # Get API key from environment variable
         api_key = os.getenv("AZURE_OPENAI_API_KEY")
         if not api_key:
-            utils.on_print("No Azure OpenAI API key found in the environment variables, make sure to set the AZURE_OPENAI_API_KEY.", Fore.RED)
+            plugins.on_print(
+                "No Azure OpenAI API key found in the environment variables, make sure to set the AZURE_OPENAI_API_KEY.",
+                Fore.RED
+            )
             ctx.use_azure_openai = False
         else:
             if ctx.verbose:
-                utils.on_print("Azure OpenAI API key found in the environment variables, redirecting to Azure OpenAI API.", Fore.WHITE + Style.DIM)
+                plugins.on_print(
+                    "Azure OpenAI API key found in the environment variables, redirecting to Azure OpenAI API.",
+                    Fore.WHITE + Style.DIM
+                )
             azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
 
             if not azure_endpoint:
-                utils.on_print("No Azure OpenAI endpoint found in the environment variables, make sure to set the AZURE_OPENAI_ENDPOINT.", Fore.RED)
+                plugins.on_print(
+                    "No Azure OpenAI endpoint found in the environment variables, make sure to set the AZURE_OPENAI_ENDPOINT.",
+                    Fore.RED
+                )
                 ctx.use_azure_openai = False
 
             deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
 
             if not deployment:
-                utils.on_print("No Azure OpenAI deployment found in the environment variables, make sure to set the AZURE_OPENAI_DEPLOYMENT.", Fore.RED)
+                plugins.on_print(
+                    "No Azure OpenAI deployment found in the environment variables, make sure to set the AZURE_OPENAI_DEPLOYMENT.",
+                    Fore.RED
+                )
                 ctx.use_azure_openai = False
 
             if ctx.use_azure_openai:
                 if ctx.verbose:
-                    utils. on_print("Using Azure OpenAI API, endpoint: " + azure_endpoint + ", deployment: " + deployment, Fore.WHITE + Style.DIM)
+                    plugins.on_print(
+                        "Using Azure OpenAI API, endpoint: " + azure_endpoint + ", deployment: " + deployment,
+                        Fore.WHITE + Style.DIM
+                    )
 
                 ctx.openai_client = AzureOpenAI(
                     api_version="2024-02-15-preview",
@@ -821,14 +924,20 @@ def run(*, ctx:Context):
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             if ctx.verbose:
-                utils.on_print("No OpenAI API key found in the environment variables, calling local OpenAI API.", Fore.WHITE + Style.DIM)
+                plugins.on_print(
+                    "No OpenAI API key found in the environment variables, calling local OpenAI API.",
+                    Fore.WHITE + Style.DIM
+                )
             ctx.openai_client = OpenAI(
                 base_url="http://127.0.0.1:8080",
                 api_key="none"
             )
         else:
             if ctx.verbose:
-                utils. on_print("OpenAI API key found in the environment variables, redirecting to OpenAI API.", Fore.WHITE + Style.DIM)
+                plugins.on_print(
+                    "OpenAI API key found in the environment variables, redirecting to OpenAI API.",
+                    Fore.WHITE + Style.DIM
+                )
             ctx.openai_client = OpenAI(
                 api_key=api_key
             )
@@ -843,7 +952,9 @@ def run(*, ctx:Context):
 
     if not system_prompt:
         if ctx.no_system_role:
-            utils.on_print("The selected model does not support the 'system' role.", Fore.WHITE + Style.DIM)
+            plugins.on_print(
+                "The selected model does not support the 'system' role.", Fore.WHITE + Style.DIM
+            )
             system_prompt = ""
         else:
             system_prompt = "You are a helpful chatbot assistant. Possible chatbot prompt commands: " + print_possible_prompt_commands()
@@ -852,7 +963,7 @@ def run(*, ctx:Context):
     if ctx.anonymous:
         user_name = ""
         if ctx.verbose:
-            utils.on_print("User name not used.", Fore.WHITE + Style.DIM)
+            plugins.on_print("User name not used.", Fore.WHITE + Style.DIM)
 
     # Set the current collection
     vector_db.set_current_collection(ctx.current_collection_name,  ctx=ctx)
@@ -860,7 +971,9 @@ def run(*, ctx:Context):
     # Initial system message
     if ctx.initial_system_prompt:
         if ctx.verbose:
-            utils.on_print("Initial system prompt: " + ctx.initial_system_prompt, Fore.WHITE + Style.DIM)
+            plugins.on_print(
+                "Initial system prompt: " + ctx.initial_system_prompt, Fore.WHITE + Style.DIM
+            )
         system_prompt = ctx.initial_system_prompt
 
     if not ctx.no_system_role and len(user_name) > 0:
@@ -884,11 +997,20 @@ def run(*, ctx:Context):
     if not ctx.interactive_mode and ctx.user_prompt:
         answer_and_exit = True
 
-    if use_memory_manager:
-        vector_db.load_chroma_client(ctx=ctx)
+    if ctx.use_memory_manager:
+        #main.load_chroma_client(ctx=ctx)
 
         if ctx.chroma_client:
-            ctx.memory_manager = MemoryManager(ctx.memory_collection_name, ctx.chroma_client, ctx.current_model, ctx.embeddings_model, ctx.verbose, num_ctx=num_ctx, long_term_memory_file=ctx.long_term_memory_file)
+            ctx.memory_manager = MemoryManager(
+                ctx.memory_collection_name,
+                ctx.chroma_client,
+                ctx.current_model,
+                ctx.embeddings_model,
+                ctx.verbose,
+                num_ctx=num_ctx,
+                long_term_memory_file=ctx.long_term_memory_file,
+                ctx=ctx
+            )
 
             if ctx.initial_message:
                 # Add long-term memory to the system prompt
@@ -896,10 +1018,10 @@ def run(*, ctx:Context):
 
                 ctx.initial_message["content"] += f"\n\nLong-term memory: {long_term_memory}"
         else:
-            use_memory_manager = False
+            ctx.use_memory_manager = False
 
     if ctx.initial_message and ctx.verbose:
-        utils.on_print("System prompt: " + ctx.initial_message["content"], Fore.WHITE + Style.DIM)
+        plugins.on_print("System prompt: " + ctx.initial_message["content"], Fore.WHITE + Style.DIM)
 
     user_input = ""
 
@@ -909,13 +1031,21 @@ def run(*, ctx:Context):
             ctx.selected_tools = []
 
         for tool in chatbot["tools"]:
-            ctx.selected_tools = toolman.tool_manager.select_tool_by_name(toolman.tool_manager.get_available_tools(ctx=ctx), tool, ctx=ctx)
+            ctx.selected_tools = plugins.tool_manager.select_tool_by_name(
+                plugins.tool_manager.get_available_tools(ctx=ctx),
+               tool,
+               ctx=ctx
+            )
 
     selected_tool_names = ctx.tools.split(',') if ctx.tools else []
     for tool_name in selected_tool_names:
         # Strip any leading or trailing spaces, single or double quotes
         tool_name = tool_name.strip().strip('\'').strip('\"')
-        ctx.selected_tools = toolman.tool_manager.select_tool_by_name(toolman.tool_manager.get_available_tools(ctx=ctx), tool_name, ctx=ctx)
+        ctx.selected_tools = plugins.tool_manager.select_tool_by_name(
+            plugins.tool_manager.get_available_tools(ctx=ctx),
+            tool_name,
+            ctx=ctx
+        )
 
     # Handle web search if requested (after model initialization)
     if ctx.web_search:
@@ -941,19 +1071,19 @@ def run(*, ctx:Context):
                 if ctx.user_prompt:
                     if ctx.other_instance_url:
                         conversation.append({"role": "assistant", "content": ctx.user_prompt})
-                        user_input = utils.on_user_input(ctx.user_prompt)
+                        user_input = plugins.on_user_input(ctx.user_prompt)
                     else:
                         user_input = ctx.user_prompt
                     ctx.user_prompt = None
                 else:
-                    user_input = utils.on_user_input()
+                    user_input = plugins.on_user_input()
 
                 if user_input.strip().startswith('"""'):
                     multi_line_input = [user_input[3:]]  # Keep the content after the first """
-                    utils.on_stdout_write("... ")  # Prompt continuation line
+                    plugins.on_stdout_write("... ")  # Prompt continuation line
 
                     while True:
-                        line = utils.on_user_input()
+                        line = plugins.on_user_input()
                         if line.strip().endswith('"""') and len(line.strip()) > 3:
                             # Handle if the line contains content before """
                             multi_line_input.append(line[:-3])
@@ -962,7 +1092,7 @@ def run(*, ctx:Context):
                             break
 
                         multi_line_input.append(line)
-                        utils.on_stdout_write("... ")  # Prompt continuation line
+                        plugins.on_stdout_write("... ")  # Prompt continuation line
 
                     user_input = "\n".join(multi_line_input)
 
@@ -970,30 +1100,36 @@ def run(*, ctx:Context):
                 break
             except KeyboardInterrupt:
                 ctx.auto_save = False
-                utils.on_print("\nGoodbye!", Style.RESET_ALL)
+                plugins.on_print("\nGoodbye!", Style.RESET_ALL)
                 break
 
             if len(user_input.strip()) == 0:
                 continue
 
         # Exit condition
-        if user_input.lower() in ['/quit', '/exit', '/bye', 'quit', 'exit', 'bye', 'goodbye', 'stop'] or re.search(r'\b(bye|goodbye)\b', user_input, re.IGNORECASE):
-            utils.on_print("Goodbye!", Style.RESET_ALL)
+        if (
+            user_input.lower() in ['/quit', '/exit', '/bye', 'quit', 'exit', 'bye', 'goodbye', 'stop']
+            or re.search(r'\b(bye|goodbye)\b', user_input, re.IGNORECASE)
+        ):
+            plugins.on_print("Goodbye!", Style.RESET_ALL)
             if ctx.memory_manager:
-                utils.on_print("Saving conversation to memory...", Fore.WHITE + Style.DIM)
+                plugins.on_print("Saving conversation to memory...", Fore.WHITE + Style.DIM)
                 if ctx.memory_manager.add_memory(conversation,  ctx=ctx):
-                    utils.on_print("Conversation saved to memory.", Fore.WHITE + Style.DIM)
-                    utils.on_print("", Style.RESET_ALL)
+                    plugins.on_print("Conversation saved to memory.", Fore.WHITE + Style.DIM)
+                    plugins.on_print("", Style.RESET_ALL)
             break
 
         if user_input.lower() in ['/reset', '/clear', '/restart', 'reset', 'clear', 'restart']:
-            utils.on_print("Conversation reset.", Style.RESET_ALL)
+            plugins.on_print("Conversation reset.", Style.RESET_ALL)
             if ctx.initial_message:
                 conversation = [ctx.initial_message]
             else:
                 conversation = []
 
-            ctx.auto_start = ("starts_conversation" in chatbot and chatbot["starts_conversation"]) or ctx.auto_start
+            ctx.auto_start = (
+                ("starts_conversation" in chatbot and chatbot["starts_conversation"])
+                or ctx.auto_start
+            )
             user_input = ""
             continue
 
@@ -1009,13 +1145,19 @@ def run(*, ctx:Context):
                 context_window = int(re.search(r'/context\s+(\d+)', user_input).group(1))
                 max_context_length = 125 # 125 * 1024 = 128000 tokens
                 if context_window < 0 or context_window > max_context_length:
-                    utils.on_print(f"Context window must be between 0 and {max_context_length}.", Fore.RED)
+                    plugins.on_print(
+                        f"Context window must be between 0 and {max_context_length}.", Fore.RED
+                    )
                 else:
                     num_ctx = context_window * 1024
                     if ctx.verbose:
-                        utils.on_print(f"Context window changed to {num_ctx} tokens.", Fore.WHITE + Style.DIM)
+                        plugins.on_print(
+                            f"Context window changed to {num_ctx} tokens.", Fore.WHITE + Style.DIM
+                        )
             else:
-                utils.on_print("Please specify context window size with /context <number>.", Fore.RED)
+                plugins.on_print(
+                    "Please specify context window size with /context <number>.", Fore.RED
+                )
             continue
 
         if "/system" in user_input:
@@ -1027,7 +1169,7 @@ def run(*, ctx:Context):
                     system_prompt = system_prompt.replace(f"{{{{{key}}}}}", value)
 
                 if ctx.verbose:
-                    utils.on_print("System prompt: " + system_prompt, Fore.WHITE + Style.DIM)
+                    plugins.on_print("System prompt: " + system_prompt, Fore.WHITE + Style.DIM)
 
                 for entry in conversation:
                     if "role" in entry and entry["role"] == "system":
@@ -1037,13 +1179,11 @@ def run(*, ctx:Context):
 
         if "/index" in user_input:
             if not ctx.chroma_client:
-                utils.on_print("ChromaDB client not initialized.", Fore.RED)
+                plugins.on_print("ChromaDB client not initialized.", Fore.RED)
                 continue
 
-            vector_db.load_chroma_client(ctx=ctx)
-
             if not ctx.current_collection_name:
-                utils.on_print("No ChromaDB collection loaded.", Fore.RED)
+                plugins.on_print("No ChromaDB collection loaded.", Fore.RED)
 
                 collection_name, collection_description = vector_db.prompt_for_vector_database_collection(ctx=ctx)
                 vector_db.set_current_collection(collection_name, collection_description, ctx=ctx)
@@ -1053,7 +1193,14 @@ def run(*, ctx:Context):
             if folder_to_index.startswith("http"):
                 base_url = folder_to_index
                 temp_folder = tempfile.mkdtemp()
-                scraper = SimpleWebScraper(base_url, output_dir=temp_folder, file_types=["html", "htm"], restrict_to_base=True, convert_to_markdown=True, verbose=ctx.verbose)
+                scraper = SimpleWebScraper(
+                    base_url,
+                    output_dir=temp_folder,
+                    file_types=["html", "htm"],
+                    restrict_to_base=True,
+                    convert_to_markdown=True,
+                    verbose=ctx.verbose
+                )
                 scraper.scrape()
                 folder_to_index = temp_folder
 
@@ -1077,7 +1224,7 @@ def run(*, ctx:Context):
 
         if user_input == "/verbose":
             ctx.verbose = not ctx.verbose
-            utils.on_print(f"Verbose mode: {ctx.verbose}", Fore.WHITE + Style.DIM)
+            plugins.on_print(f"Verbose mode: {ctx.verbose}", Fore.WHITE + Style.DIM)
             continue
 
         if "/cot" in user_input:
@@ -1109,7 +1256,12 @@ def run(*, ctx:Context):
                 user_input = user_input.replace("/search", "").strip()
                 n_docs_to_return = ctx.number_of_documents_to_return_from_vector_db
 
-            answer_from_vector_db = vector_db.query_vector_database(user_input, collection_name=ctx.current_collection_name, n_results=n_docs_to_return, ctx=ctx)
+            answer_from_vector_db = vector_db.query_vector_database(
+                user_input,
+                collection_name=ctx.current_collection_name,
+                n_results=n_docs_to_return,
+                ctx=ctx
+            )
             if answer_from_vector_db:
                 initial_user_input = user_input
                 user_input = "Question: " + initial_user_input
@@ -1119,19 +1271,25 @@ def run(*, ctx:Context):
                 user_input += "\nQuestion: " + initial_user_input
 
                 if ctx.verbose:
-                    utils.on_print(user_input, Fore.WHITE + Style.DIM)
+                    plugins.on_print(user_input, Fore.WHITE + Style.DIM)
+
         elif "/web" in user_input:
             user_input = user_input.replace("/web", "").strip()
-            web_search_response = web_search.web_search(user_input, num_ctx=num_ctx, web_embedding_model=ctx.embeddings_model, ctx=ctx)
+            web_search_response = web_search.web_search(
+                user_input,
+                num_ctx=num_ctx,
+                web_embedding_model=ctx.embeddings_model,
+                ctx=ctx
+            )
             if web_search_response:
                 initial_user_input = user_input
                 user_input += "Context: " + web_search_response
                 user_input += "\n\nQuestion: " + initial_user_input
-                user_input += "\nAnswer the question as truthfully as possible using the provided web search results, and if the answer is not contained within the text below, say 'I don't know'.\n"
+                user_input += "\nAnswer the question as truthfully as possible using the web search results in the provided context, if the answer is not contained within the provided context say 'I don't know'.\n"
                 user_input += "Cite some useful links from the search results to support your answer."
 
                 if ctx.verbose:
-                    utils.on_print(user_input, Fore.WHITE + Style.DIM)
+                    plugins.on_print(user_input, Fore.WHITE + Style.DIM)
 
         if user_input == "/thinking_model":
             selected_model = prompt_for_model(default_model, ctx.thinking_model, ctx=ctx)
@@ -1139,57 +1297,21 @@ def run(*, ctx:Context):
             continue
 
         if user_input == "/model":
-            thinking_model_is_same = ctx.thinking_model == ctx.current_model
-
-            if ctx.use_azure_openai:
-                # For Azure OpenAI, just ask for the deployment name
-                selected_model = utils.on_user_input(f"Enter Azure OpenAI deployment name [{ctx.current_model}]: ").strip() or ctx.current_model
-            else:
-                selected_model = prompt_for_model(default_model, ctx.current_model, ctx=ctx)
-
-            ctx.current_model = selected_model
-
-            if thinking_model_is_same:
-                ctx.thinking_model = selected_model
-
-            if use_memory_manager:
-                vector_db.load_chroma_client(ctx=ctx)
-
-                if ctx.chroma_client:
-                    ctx.memory_manager = MemoryManager(ctx.memory_collection_name, ctx.chroma_client, ctx.current_model, ctx.embeddings_model, ctx.verbose, num_ctx=num_ctx, long_term_memory_file=ctx.long_term_memory_file)
-                else:
-                    use_memory_manager = False
+            on_model_command(default_model, num_ctx,  ctx=ctx)
             continue
 
         if user_input == "/memory":
-            if use_memory_manager:
-                # Deactivate memory manager
-                ctx.memory_manager = None
-                use_memory_manager = False
-                utils.on_print("Memory manager deactivated.", Fore.WHITE + Style.DIM)
-            else:
-                vector_db.load_chroma_client(ctx=ctx)
-
-                if ctx.chroma_client:
-                    ctx.memory_manager = MemoryManager(ctx.memory_collection_name, ctx.chroma_client, ctx.current_model, ctx.embeddings_model, ctx.verbose, num_ctx=num_ctx, long_term_memory_file=ctx.long_term_memory_file)
-                    use_memory_manager = True
-                    utils.on_print("Memory manager activated.", Fore.WHITE + Style.DIM)
-                else:
-                    utils.on_print("ChromaDB client not initialized.", Fore.RED)
-
+            on_memoy_command(num_ctx, ctx=ctx)
             continue
 
         if user_input == "/model2":
-            if ctx.use_azure_openai:
-                # For Azure OpenAI, just ask for the deployment name
-                current_alt = ctx.alternate_model if ctx.alternate_model else ctx.current_model
-                ctx.alternate_model = utils.on_user_input(f"Enter Azure OpenAI deployment name for alternate model [{current_alt}]: ").strip() or current_alt
-            else:
-                ctx.alternate_model = prompt_for_model(default_model, ctx.current_model, ctx=ctx)
+            on_model2_command(default_model, ctx=ctx)
             continue
 
         if user_input == "/tools":
-            ctx.selected_tools = toolman.tool_manager.select_tools(toolman.tool_manager.get_available_tools(ctx=ctx), ctx.selected_tools)
+            ctx.selected_tools = plugins.tool_manager.select_tools(
+                plugins.tool_manager.get_available_tools(ctx=ctx), ctx.selected_tools
+            )
             continue
 
         if "/save" in user_input:
@@ -1224,15 +1346,17 @@ def run(*, ctx:Context):
                                     if "function" in tool_call and "arguments" in tool_call["function"]:
                                         if isinstance(tool_call["function"]["arguments"], str):
                                             try:
-                                                tool_call["function"]["arguments"] = json.loads(tool_call["function"]["arguments"])
+                                                tool_call["function"]["arguments"] = json.loads(
+                                                    tool_call["function"]["arguments"]
+                                                )
                                             except json.JSONDecodeError:
                                                 pass
 
-                    utils.on_print(f"Conversation loaded from {file_path}", Fore.WHITE + Style.DIM)
+                    plugins.on_print(f"Conversation loaded from {file_path}", Fore.WHITE + Style.DIM)
                 else:
-                    utils.on_print(f"Conversation file '{file_path}' not found.", Fore.RED)
+                    plugins.on_print(f"Conversation file '{file_path}' not found.", Fore.RED)
             else:
-                utils. on_print("Please specify a file path to load the conversation.", Fore.RED)
+                plugins.on_print("Please specify a file path to load the conversation.", Fore.RED)
             continue
 
         if user_input == "/collection":
@@ -1241,26 +1365,32 @@ def run(*, ctx:Context):
             continue
 
         if ctx.memory_manager and (user_input in ('/remember', '/memorize')):
-            utils.on_print("Saving conversation to memory...", Fore.WHITE + Style.DIM)
+            plugins.on_print("Saving conversation to memory...", Fore.WHITE + Style.DIM)
             if ctx.memory_manager.add_memory(conversation):
-                utils.on_print("Conversation saved to memory.", Fore.WHITE + Style.DIM)
-                utils.on_print("", Style.RESET_ALL)
+                plugins.on_print("Conversation saved to memory.", Fore.WHITE + Style.DIM)
+                plugins.on_print("", Style.RESET_ALL)
             continue
 
         if ctx.memory_manager and user_input == "/forget":
-            # Remove memory collection
-            vector_db.delete_collection(ctx.memory_collection_name, ctx=ctx)
+            # Reset memory collection
+            ctx.memory_manager.reset_memory(ctx=ctx)
             continue
 
         if "/rmcollection" in user_input or "/deletecollection" in user_input:
             if "/rmcollection" in user_input and len(user_input.split("/rmcollection")) > 1:
                 collection_name = user_input.split("/rmcollection")[1].strip()
 
-            if not collection_name and "/deletecollection" in user_input and len(user_input.split("/deletecollection")) > 1:
+            if (
+                not collection_name
+                and "/deletecollection" in user_input
+                and len(user_input.split("/deletecollection")) > 1
+            ):
                 collection_name = user_input.split("/deletecollection")[1].strip()
 
             if not collection_name:
-                collection_name, _ = vector_db.prompt_for_vector_database_collection(prompt_create_new=False, include_web_cache=True,  ctx=ctx)
+                collection_name, _ = vector_db.prompt_for_vector_database_collection(
+                    prompt_create_new=False, include_web_cache=True,  ctx=ctx
+                )
 
             if not collection_name:
                 continue
@@ -1274,6 +1404,7 @@ def run(*, ctx:Context):
             continue
 
         if user_input == "/chatbot":
+
             chatbot = prompt_for_chatbot(ctx=ctx)
             if "tools" in chatbot and len(chatbot["tools"]) > 0:
                 # Append chatbot tools to selected_tools if not already in the array
@@ -1281,7 +1412,9 @@ def run(*, ctx:Context):
                     ctx.selected_tools = []
 
                 for tool in chatbot["tools"]:
-                    ctx.selected_tools = toolman.tool_manager.select_tool_by_name(toolman.tool_manager.get_available_tools(ctx=ctx), tool,  ctx=ctx)
+                    ctx.selected_tools = plugins.tool_manager.select_tool_by_name(
+                        plugins.tool_manager.get_available_tools(ctx=ctx), tool,  ctx=ctx
+                    )
 
             system_prompt = chatbot["system_prompt"]
             # Initial system message
@@ -1295,14 +1428,17 @@ def run(*, ctx:Context):
                     system_prompt = system_prompt.replace(f"{{{{{key}}}}}", value)
 
                 if ctx.verbose:
-                    utils. on_print("System prompt: " + system_prompt, Fore.WHITE + Style.DIM)
+                    plugins.on_print("System prompt: " + system_prompt, Fore.WHITE + Style.DIM)
 
                 ctx.initial_message = {"role": "system", "content": system_prompt}
                 conversation = [ctx.initial_message]
             else:
                 conversation = []
-            utils.on_print("Conversation reset.", Style.RESET_ALL)
-            ctx.auto_start = ("starts_conversation" in chatbot and chatbot["starts_conversation"]) or ctx.auto_start
+            plugins.on_print("Conversation reset.", Style.RESET_ALL)
+            ctx.auto_start = (
+                ("starts_conversation" in chatbot and chatbot["starts_conversation"])
+                or ctx.auto_start
+            )
             user_input = ""
             continue
 
@@ -1315,7 +1451,7 @@ def run(*, ctx:Context):
             else:
                 clipboard_content = pyperclip.paste()
             user_input = user_input.replace("/cb", "\n" + clipboard_content + "\n")
-            utils.on_print("Clipboard content added to user input.", Fore.WHITE + Style.DIM)
+            plugins.on_print("Clipboard content added to user input.", Fore.WHITE + Style.DIM)
 
         image_path = None
         # If user input contains '/file <path of a file to load>' anywhere in the prompt, read the file and append the content to user_input
@@ -1331,26 +1467,19 @@ def run(*, ctx:Context):
                         user_input = user_input.replace("/file", "")
                         user_input += "\n" + file.read()
                 except FileNotFoundError:
-                    utils.on_print("File not found. Please try again.", Fore.RED)
+                    plugins.on_print("File not found. Please try again.", Fore.RED)
                     continue
             else:
                 user_input = user_input.split("/file")[0].strip()
                 image_path = file_path
 
         if user_input == "/think":
-            if not ctx.think_mode_on:
-                ctx.think_mode_on = True
-                if ctx.verbose:
-                    utils.on_print("Think mode activated.", Fore.WHITE + Style.DIM)
-            else:
-                ctx.think_mode_on = False
-                if ctx.verbose:
-                    utils.on_print("Think mode deactivated.", Fore.WHITE + Style.DIM)
+            on_think_command(ctx=ctx)
             continue
 
         # If user input starts with '/' and is not a command, ignore it.
         if user_input.startswith('/') and not user_input.startswith('//'):
-            utils.on_print("Invalid command. Please try again.", Fore.RED)
+            plugins.on_print("Invalid command. Please try again.", Fore.RED)
             continue
 
         # Add user input to conversation history
@@ -1359,25 +1488,54 @@ def run(*, ctx:Context):
         elif len(user_input.strip()) > 0:
             conversation.append({"role": "user", "content": user_input})
 
+        # If the conversation memory is enabled then make it handle the conversation by recalling and
+        # injecting memories related to the current user query
         if ctx.memory_manager:
             ctx.memory_manager.handle_user_query(conversation)
 
         if thoughts:
             thoughts = f"Thinking...\n{thoughts}\nEnd of internal thoughts.\n\nFinal response:"
             if ctx.syntax_highlighting:
-                utils.on_print(utils.colorize(thoughts), Style.RESET_ALL, "\rBot: " if ctx.interactive_mode else "")
+                plugins.on_print(
+                    utils.colorize(thoughts),
+                    Style.RESET_ALL,
+                    "\rBot: " if ctx.interactive_mode else ""
+                )
             else:
-                utils. on_print(thoughts, Style.RESET_ALL, "\rBot: " if ctx.interactive_mode else "")
+                plugins.on_print(
+                    thoughts, Style.RESET_ALL, "\rBot: " if ctx.interactive_mode else ""
+                )
 
             # Add the chain of thoughts to the conversation, as an assistant message
             conversation.append({"role": "assistant", "content": thoughts})
 
         # Generate response
-        bot_response = ask_ollama_with_conversation(conversation, selected_model, temperature=ctx.temperature, prompt_template=ctx.prompt_template, tools=ctx.selected_tools, stream_active=ctx.stream, num_ctx=num_ctx,  ctx=ctx)
+        bot_response = ask_ollama_with_conversation(
+            conversation,
+            selected_model,
+            temperature=ctx.temperature,
+            prompt_template=ctx.prompt_template,
+            tools=ctx.selected_tools,
+            stream_active=ctx.stream,
+            num_ctx=num_ctx,
+            ctx=ctx
+        )
 
+        # Generate also the alternate_bot_response if an alternate_model is defined
         alternate_bot_response = None
         if ctx.alternate_model:
-            alternate_bot_response = ask_ollama_with_conversation(conversation, ctx.alternate_model, temperature=ctx.temperature, prompt_template=ctx.prompt_template, tools=ctx.selected_tools, prompt="\nAlt", prompt_color=Fore.CYAN, stream_active=ctx.stream, num_ctx=num_ctx,  ctx=ctx)
+            alternate_bot_response = ask_ollama_with_conversation(
+                conversation,
+                ctx.alternate_model,
+                temperature=ctx.temperature,
+                prompt_template=ctx.prompt_template,
+                tools=ctx.selected_tools,
+                prompt="\nAlt",
+                prompt_color=Fore.CYAN,
+                stream_active=ctx.stream,
+                num_ctx=num_ctx,
+                ctx=ctx
+            )
 
         bot_response_handled_by_plugin = False
         for plugin in plugins.plugin_manager.plugins:
@@ -1387,21 +1545,42 @@ def run(*, ctx:Context):
 
         if not bot_response_handled_by_plugin:
             if ctx.syntax_highlighting:
-                utils.on_print(utils.colorize(bot_response), Style.RESET_ALL, "\rBot: " if ctx.interactive_mode else "")
+                plugins.on_print(
+                    utils.colorize(bot_response),
+                    Style.RESET_ALL,
+                    "\rBot: " if ctx.interactive_mode else ""
+                )
 
                 if alternate_bot_response:
-                    utils.on_print(utils.colorize(alternate_bot_response), Fore.CYAN, "\rAlt: " if ctx.interactive_mode else "")
+                    plugins.on_print(
+                        utils.colorize(alternate_bot_response),
+                        Fore.CYAN,
+                        "\rAlt: " if ctx.interactive_mode else ""
+                    )
+
             elif not ctx.use_openai and not ctx.use_azure_openai and len(ctx.selected_tools) > 0:
                 # Ollama cannot stream when tools are used
-                utils.on_print(bot_response, Style.RESET_ALL, "\rBot: " if ctx.interactive_mode else "")
+                plugins.on_print(
+                    bot_response,
+                    Style.RESET_ALL,
+                    "\rBot: " if ctx.interactive_mode else ""
+                )
 
                 if alternate_bot_response:
-                    utils.on_print(alternate_bot_response, Fore.CYAN, "\rAlt: " if ctx.interactive_mode else "")
+                    plugins.on_print(
+                        alternate_bot_response,
+                        Fore.CYAN,
+                        "\rAlt: " if ctx.interactive_mode else ""
+                    )
 
+        # If there is an alternate_bot_response prompts the user to choose the preferred response
         if alternate_bot_response:
             # Ask user to select the preferred response
-            utils.on_print(f"Select the preferred response:\n1. Original model ({ctx.current_model})\n2. Alternate model ({ctx.alternate_model})", Fore.WHITE + Style.DIM)
-            choice = utils.on_user_input("Enter the number of your preferred response [1]: ") or "1"
+            plugins.on_print(
+                f"Select the preferred response:\n1. Original model ({ctx.current_model})\n2. Alternate model ({ctx.alternate_model})",
+                Fore.WHITE + Style.DIM
+            )
+            choice = plugins.on_user_input("Enter the number of your preferred response [1]: ") or "1"
             bot_response = bot_response if choice == "1" else alternate_bot_response
 
         # Add bot response to conversation history
@@ -1415,13 +1594,13 @@ def run(*, ctx:Context):
                 with open(ctx.output, 'a', encoding='utf-8') as f:
                     f.write(bot_response)
                     if ctx.verbose:
-                        utils.on_print(f"Response saved to {ctx.output}", Fore.WHITE + Style.DIM)
+                        plugins.on_print(f"Response saved to {ctx.output}", Fore.WHITE + Style.DIM)
             else:
-                utils.on_print("No bot response to save.", Fore.YELLOW)
+                plugins.on_print("No bot response to save.", Fore.YELLOW)
 
         # Exit condition: if the bot response contains an exit command ('bye', 'goodbye'), using a regex pattern to match the words
         if bot_response and re.search(r'\b(bye|goodbye)\b', bot_response, re.IGNORECASE):
-            utils.on_print("Goodbye!", Style.RESET_ALL)
+            plugins.on_print("Goodbye!", Style.RESET_ALL)
             break
 
         if answer_and_exit:
@@ -1437,15 +1616,19 @@ def run(*, ctx:Context):
         try:
             ctx.full_doc_store.close()
             if ctx.verbose:
-                utils.on_print("Closed global full document store.", Fore.WHITE + Style.DIM)
+                plugins.on_print("Closed global full document store.", Fore.WHITE + Style.DIM)
         except Exception as e:
-            utils.on_print(f"Warning: Error closing full document store: {e}", Fore.YELLOW)
+            plugins.on_print(f"Warning: Error closing full document store: {e}", Fore.YELLOW)
 
+    # If auto-save of conversations is enabled then save the current conversation
     if ctx.auto_save:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
         if ctx.conversations_folder:
-            save_conversation_to_file(conversation, os.path.join(ctx.conversations_folder, f"conversation_{timestamp}.txt"),  ctx=ctx)
+            save_conversation_to_file(
+                conversation,
+                os.path.join(ctx.conversations_folder,f"conversation_{timestamp}.txt"),
+                ctx=ctx
+            )
         else:
             save_conversation_to_file(conversation, f"conversation_{timestamp}.txt",  ctx=ctx)
 
@@ -1468,7 +1651,11 @@ def save_conversation(user_input, conversation, *, ctx:Context):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         if ctx.conversations_folder:
-            save_conversation_to_file(conversation, os.path.join(ctx.conversations_folder, f"conversation_{timestamp}.txt"), ctx=ctx)
+            save_conversation_to_file(
+                conversation,
+                os.path.join(ctx.conversations_folder, f"conversation_{timestamp}.txt"),
+                ctx=ctx
+            )
         else:
             save_conversation_to_file(conversation, f"conversation_{timestamp}.txt", ctx=ctx)
 
@@ -1494,7 +1681,9 @@ def save_conversation_to_file(conversation, file_path, *,  ctx:Context):
     # Save the conversation to a text file (filter out system messages)
     with open(file_path, 'w', encoding="utf8") as f:
         # Skip empty messages or system messages
-        filtered_conversation = [entry for entry in conversation if "content" in entry and entry["content"] and "role" in entry and entry["role"] != "system" and entry["role"] != "tool"]
+        filtered_conversation = (
+            [entry for entry in conversation if "content" in entry and entry["content"] and "role" in entry and entry["role"] != "system" and entry["role"] != "tool"]
+        )
 
         for message in filtered_conversation:
             role = message["role"]
@@ -1507,7 +1696,7 @@ def save_conversation_to_file(conversation, file_path, *,  ctx:Context):
             f.write(f"{role}: {message['content']}\n\n")
 
     if ctx.verbose:
-        utils.on_print(f"Conversation saved to {file_path}", Fore.WHITE + Style.DIM)
+        plugins.on_print(f"Conversation saved to {file_path}", Fore.WHITE + Style.DIM)
 
     # Save the conversation to a JSON file
     json_file_path = file_path.replace(".txt", ".json")
@@ -1515,7 +1704,84 @@ def save_conversation_to_file(conversation, file_path, *,  ctx:Context):
         json.dump(conversation, f, indent=4)
 
     if ctx.verbose:
-        utils.on_print(f"Conversation saved to {json_file_path}", Fore.WHITE + Style.DIM)
+        plugins.on_print(f"Conversation saved to {json_file_path}", Fore.WHITE + Style.DIM)
+
+
+def on_model_command(default_model, num_ctx,  *, ctx:Context):
+    thinking_model_is_same = ctx.thinking_model == ctx.current_model
+
+    if ctx.use_azure_openai:
+        # For Azure OpenAI, just ask for the deployment name
+        selected_model = plugins.on_user_input(f"Enter Azure OpenAI deployment name [{ctx.current_model}]: ").strip() or ctx.current_model
+    else:
+        selected_model = prompt_for_model(default_model, ctx.current_model, ctx=ctx)
+
+    ctx.current_model = selected_model
+
+    if thinking_model_is_same:
+        ctx.thinking_model = selected_model
+
+    if ctx.use_memory_manager:
+        #main.load_chroma_client(ctx=ctx)
+
+        if ctx.chroma_client:
+            ctx.memory_manager = MemoryManager(
+                ctx.memory_collection_name,
+                ctx.chroma_client,
+                ctx.current_model,
+                ctx.embeddings_model,
+                ctx.verbose,
+                num_ctx=num_ctx,
+                long_term_memory_file=ctx.long_term_memory_file,
+                ctx=ctx
+            )
+        else:
+            ctx.use_memory_manager = False
+
+def on_think_command(*, ctx:Context):
+    if not ctx.think_mode_on:
+        ctx.think_mode_on = True
+        if ctx.verbose:
+            plugins.on_print("Think mode activated.", Fore.WHITE + Style.DIM)
+    else:
+        ctx.think_mode_on = False
+        if ctx.verbose:
+            plugins.on_print("Think mode deactivated.", Fore.WHITE + Style.DIM)
+
+
+def on_model2_command(default_model, *, ctx:Context):
+    if ctx.use_azure_openai:
+        # For Azure OpenAI, just ask for the deployment name
+        current_alt = ctx.alternate_model if ctx.alternate_model else ctx.current_model
+        ctx.alternate_model = plugins.on_user_input(f"Enter Azure OpenAI deployment name for alternate model [{current_alt}]: ").strip() or current_alt
+    else:
+        ctx.alternate_model = prompt_for_model(default_model, ctx.current_model, ctx=ctx)
+
+
+def on_memoy_command(num_ctx, *, ctx:Context):
+    if ctx.use_memory_manager:
+        # Deactivate memory manager
+        ctx.memory_manager = None
+        ctx.use_memory_manager = False
+        plugins.on_print("Memory manager deactivated.", Fore.WHITE + Style.DIM)
+    else:
+        #main.load_chroma_client(ctx=ctx)
+
+        if ctx.chroma_client:
+            ctx.memory_manager = MemoryManager(
+                ctx.memory_collection_name,
+                ctx.chroma_client,
+                ctx.current_model,
+                ctx.embeddings_model,
+                ctx.verbose,
+                num_ctx=num_ctx,
+                long_term_memory_file=ctx.long_term_memory_file,
+                ctx=ctx
+            )
+            ctx.use_memory_manager = True
+            plugins.on_print("Memory manager activated.", Fore.WHITE + Style.DIM)
+        else:
+            plugins.on_print("ChromaDB client not initialized.", Fore.RED)
 
 
 #if __name__ == "__main__":
