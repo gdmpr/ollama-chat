@@ -1,3 +1,8 @@
+This is a reorganized version of ollama-chat by jeromeboivin. This program was a very interesting example to study in order to understand how an advanced AI application can work, but its single 6k-line file was very difficult to understand and navigate. So I thought that reorganizing the code would be a good way to understand how it works and make it more manageable.
+
+Warning: After reorganizing the code, I did not test all the functions so something may have broken.
+
+
 # Ollama-Chat: Extensible CLI for Local Language Models and OpenAI Models
 
 **Ollama-Chat** is a powerful, customizable Python CLI tool that interacts with local Language Models (LLMs) via `Ollama` and `Llama-Cpp` servers, as well as OpenAI models. Designed with flexibility and **privacy** in mind, this tool ensures that all LLMs run locally on your machine, meaning your data never leaves your environment. It also integrates seamlessly with a local or distant `ChromaDB` vector database, providing efficient Retrieval-Augmented Generation (RAG) capabilities to enhance response accuracy.
